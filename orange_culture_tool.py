@@ -1,4 +1,4 @@
-# © 2025 Dr. Hussein Ali — Orange Lab, 6 October City, Egypt
+# © 2025 Dr / Hussein Ali — Orange Lab, 6 October City, Egypt
 # Orange Culture Tool — All Rights Reserved
 # Unauthorized copying or distribution is prohibited.
 
@@ -216,9 +216,9 @@ def ensure_ocr_dependencies() -> None:
 @st.cache_data(show_spinner=False)
 def get_startup_validation_issues() -> List[str]:
     issues: List[str] = []
-    issues.extend(validate_abx_guidelines(known_organisms=ORGANISM_PROFILE.keys(), known_specimens=SPECIMEN_TYPES))
-    issues.extend(validate_organism_profile(known_antibiotics=ABX_GUIDELINES.keys()))
-    issues.extend(validate_specimen_organism_map(known_organisms=ORGANISM_PROFILE.keys()))
+    issues.extend(validate_abx_guidelines(known_organisms=list(ORGANISM_PROFILE.keys()), known_specimens=SPECIMEN_TYPES))
+    issues.extend(validate_organism_profile(known_antibiotics=list(ABX_GUIDELINES.keys())))
+    issues.extend(validate_specimen_organism_map(known_organisms=list(ORGANISM_PROFILE.keys())))
 
     deduped: List[str] = []
     seen = set()
@@ -250,7 +250,7 @@ def best_default_index(options: List[str], preferred: Optional[str]) -> int:
 # =========================================================
 # صفحة تسجيل الدخول
 # =========================================================
-def get_subscription_days_left(email: str) -> int | None:
+def get_subscription_days_left(email: str) -> Optional[int]:
     email = (email or "").strip().lower()
     if email not in SUBSCRIBERS:
         return None
@@ -345,7 +345,10 @@ def check_subscription(email: str) -> bool:
 def logout(reason: str = "تم تسجيل الخروج.") -> None:
     st.session_state.clear()
     st.session_state["logout_reason"] = reason
-    st.rerun()
+    if hasattr(st, "rerun"):
+        st.rerun()
+    else:
+        st.experimental_rerun()
 
 def handle_session_timeout() -> None:
     last_activity = st.session_state.get("last_activity")
@@ -530,7 +533,7 @@ def extract_all_data_cached(file_bytes: bytes) -> Dict[str, Any]:
 # التحليل السريري
 # =========================================================
 def is_intrinsically_avoided(organism_type: str, drug_name: str, drug_info: Dict[str, Any]) -> bool:
-    organism_avoid = ORGANISM_PROFILE.get(organism_type, {}).get("avoid", [])
+    organism_avoid = (ORGANISM_PROFILE.get(organism_type) or {}).get("avoid", [])
     d_low = drug_name.lower()
     d_class = drug_info.get("class", "").lower()
 
@@ -617,11 +620,12 @@ def analyze_antibiotics(
             continue
 
         if is_preg and info.get("preg_status") == "Banned":
+            preg_note = info.get("preg_note") or "ممنوع في الحمل"
             banned.append(build_banned_item(
                 drug,
                 "pregnancy",
-                info.get("preg_note", "ممنوع في الحمل").splitlines()[0],
-                info.get("preg_note", "ممنوع في الحمل"),
+                preg_note.splitlines()[0] if preg_note.splitlines() else "ممنوع في الحمل",
+                preg_note,
             ))
             continue
 
@@ -720,7 +724,7 @@ def generate_report(
         op = ORGANISM_PROFILE[organism]
         if op.get("note"):
             lines.append(f"Note     : {op['note']}")
-        spec_ctx = op.get("specimen_context", {}).get(specimen, "")
+        spec_ctx = (op.get("specimen_context") or {}).get(specimen, "")
         if spec_ctx:
             lines.append(f"Context  : {spec_ctx}")
         if op.get("first_line"):
@@ -752,7 +756,7 @@ def generate_report(
             lines.append(f"WHO AWaRe : {item.get('aware', '-')}")
             lines.append(f"Class     : {item.get('class', '-')}")
             lines.append(f"Route     : {'Oral/PO-friendly' if item.get('high_po') else 'IV/IM only'}")
-            spec_note = item.get("specimen_notes", {}).get(specimen, "")
+            spec_note = (item.get("specimen_notes") or {}).get(specimen, "")
             if spec_note:
                 lines.append(f"Note      : {item.get('note', '')}")
                 lines.append(f"{specimen}   : {spec_note}")
@@ -761,7 +765,10 @@ def generate_report(
             if is_renal:
                 lines.append(f"Renal     : {item.get('renal_note', '-')}")
             if is_preg and item.get("preg_status") == "Warn":
-                lines.append(f"Pregnancy : {item.get('preg_note', '').splitlines()[0]}")
+                preg_note = item.get("preg_note") or ""
+                preg_first = preg_note.splitlines()[0] if preg_note.splitlines() else ""
+                if preg_first:
+                    lines.append(f"Pregnancy : {preg_first}")
     else:
         lines.append("No recommended options after applying all restrictions.")
 
@@ -783,7 +790,7 @@ def generate_report(
         for item in preg_warn_items:
             lines.append(f"{item['name']}")
             lines.append(sep2)
-            for ln in item.get("preg_note", "").splitlines():
+            for ln in (item.get("preg_note") or "").splitlines():
                 lines.append(ln)
             lines.append("")
 
@@ -821,7 +828,7 @@ def generate_report(
                         rendered = True
                         break
                 if not rendered:
-                    lines.extend([f"  {ln}" for ln in b["reason_detail"].splitlines()])
+                    lines.extend([f"  {ln}" for ln in (b.get("reason_detail") or "").splitlines()])
                 lines.append("")
 
         if grouped["pregnancy"]:
@@ -829,7 +836,7 @@ def generate_report(
             lines.append(sep2)
             for b in grouped["pregnancy"]:
                 lines.append(f"- {b['name']} — {b['reason_short']}")
-                lines.extend([f"  {ln}" for ln in b["reason_detail"].splitlines()])
+                lines.extend([f"  {ln}" for ln in (b.get("reason_detail") or "").splitlines()])
                 lines.append("")
 
         if grouped["child"]:
@@ -837,7 +844,7 @@ def generate_report(
             lines.append(sep2)
             for b in grouped["child"]:
                 lines.append(f"- {b['name']} — {b['reason_short']}")
-                lines.extend([f"  {ln}" for ln in b["reason_detail"].splitlines()])
+                lines.extend([f"  {ln}" for ln in (b.get("reason_detail") or "").splitlines()])
                 lines.append("")
 
         if grouped["organism"]:
@@ -861,7 +868,7 @@ def generate_report(
     lines.append("Route info: BNF 2025 | FDA Labels | WHO AWaRe 2025")
     lines.append("WHO AWaRe : 🟢 Access | 🟡 Watch | 🔴 Reserve")
     lines.append(sep)
-    lines.append("Developed by: Dr. Hussein Ali | Orange Lab")
+    lines.append("Developed by Dr / Hussein Ali | Orange Lab")
     lines.append(sep)
 
     return "\n".join(lines)
@@ -875,7 +882,10 @@ if not st.session_state.authenticated:
         if check_subscription(email_input):
             st.session_state.authenticated = True
             st.session_state.last_activity = time.time()
-            st.rerun()
+            if hasattr(st, "rerun"):
+                st.rerun()
+            else:
+                st.experimental_rerun()
     st.stop()
 
 handle_session_timeout()
@@ -948,7 +958,7 @@ if uploaded:
             op = ORGANISM_PROFILE[organism_type]
             with st.expander("📌 Organism Guidance", expanded=True):
                 st.info(op.get("note", ""))
-                spec_ctx = op.get("specimen_context", {}).get(culture_type, "")
+                spec_ctx = (op.get("specimen_context") or {}).get(culture_type, "")
                 if spec_ctx:
                     st.warning(f"**{culture_type} Context:** {spec_ctx}")
                 if op.get("first_line"):
@@ -1049,7 +1059,7 @@ if uploaded:
             )
             for item in preg_warn_items:
                 with st.expander(f"⚠️ {item['name']} — تفاصيل التحذير"):
-                    for line in item.get("preg_note", "").splitlines():
+                    for line in (item.get("preg_note") or "").splitlines():
                         st.write(line)
 
         if banned:
@@ -1080,23 +1090,28 @@ if uploaded:
             for item in allowed:
                 sir_badge = f" [{sir_map.get(item['name'], '?')}]" if sir_map else ""
                 preg_flag = " 🤰" if (is_preg and item.get("preg_status") == "Warn") else ""
+                
+                aware_val = item.get('aware', 'Unknown')
+                color_val = AWARE_COLORS.get(aware_val, aware_val)
 
                 with st.expander(
-                    f"{item['name']}{sir_badge}{preg_flag} — {AWARE_COLORS.get(item['aware'], item['aware'])}",
+                    f"{item['name']}{sir_badge}{preg_flag} — {color_val}",
                     expanded=False
                 ):
                     c1, c2 = st.columns(2)
                     c1.write(f"**Class:** {item.get('class', '-')}")
                     c2.write(f"**Route:** {get_route_label(item)}")
                     st.write(f"**Note:** {item.get('note', '-')}")
-                    spec_note = item.get("specimen_notes", {}).get(culture_type, "")
+                    spec_note = (item.get("specimen_notes") or {}).get(culture_type, "")
                     if spec_note:
                         st.info(f"**{culture_type} Note:** {spec_note}")
                     if is_renal:
                         st.caption(f"Renal: {item.get('renal_note', '-')}")
                     if is_preg and item.get("preg_status") == "Warn":
-                        preg_first = item.get("preg_note", "").splitlines()[0] if item.get("preg_note") else ""
-                        st.caption(f"🤰 {preg_first}")
+                        preg_note = item.get("preg_note") or ""
+                        preg_first = preg_note.splitlines()[0] if preg_note.splitlines() else ""
+                        if preg_first:
+                            st.caption(f"🤰 {preg_first}")
         elif not banned and not warned:
             st.info("اختر المضادات الحساسة أو المناسبة من القائمة أعلاه.")
 
@@ -1134,7 +1149,7 @@ if uploaded:
 st.divider()
 st.markdown("""
 <div style="text-align:center;color:gray;font-size:0.9rem;">
-  <strong>Developed by: Dr. Hussein Ali | Orange Lab</strong><br>
+  <strong>Developed by Dr / Hussein Ali | Orange Lab</strong><br>
   EUCAST 2026 | CLSI M100 2026 | IDSA AMR 2025 | BNF 2025 | Egypt National Guidelines
 </div>
 """, unsafe_allow_html=True)
