@@ -39,7 +39,7 @@ ORGANISM_PROFILE = {
         "second_line": ["Cefuroxime sodium","Norfloxacin","Ciprofloxacin",
                         "Piperacillin + Tazobactam","Ceftriaxone"],
         "third_line":  ["Ertapenem","Meropenem"],
-        "avoid": ["Ampicillin"],
+        "avoid": ["Ampicillin (alone)"],
         "urine_note": (
             "Ertapenem: الخيار الأول لـ ESBL-producing Klebsiella (IDSA 2023).\n"
             "Norfloxacin: للمسالك فقط."
@@ -214,7 +214,7 @@ ORGANISM_PROFILE = {
         "first_line": ["Amoxicillin + Clavulanic acid","Cefuroxime","Ceftriaxone"],
         "second_line": ["Azithromycin","Levofloxacin","Trimethoprim/Sulfamethoxazole"],
         "third_line":  [],
-        "avoid": ["Ampicillin (alone)"],
+        "avoid": ["Ampicillin"],
         "urine_note": "",
         "specimen_context": {
             "Sputum": "🔬 شائع في COPD exacerbation و CAP.",
@@ -227,7 +227,7 @@ ORGANISM_PROFILE = {
         "first_line": ["Levofloxacin","Azithromycin"],
         "second_line": ["Doxycycline","Clarithromycin"],
         "third_line":  [],
-        "avoid": ["Beta-lactams (alone)","Aminoglycosides","Cephalosporins (alone)"],
+        "avoid": ["Beta-lactams (alone)","Aminoglycosides","Cephalosporins)"],
         "urine_note": "",
         "specimen_context": {
             "Sputum": "🔬 Legionella — CAP الشديد، خاصةً في الفنادق أو مكيفات الهواء.",
