@@ -1,6 +1,13 @@
-# © 2025 Dr. Hussein Ali — Orange Lab, 6 October City, Egypt
-# Orange Culture Tool — Data Module
-# Unauthorized copying or distribution is prohibited.
+"""Clinical antibiotic guideline dataset for Orange Culture Tool.
+
+Enhancements in this revision:
+- helper functions for normalization and alias lookup
+- lightweight schema validation utilities
+- explicit exported alias index for fast matching
+"""
+
+import re
+from typing import Any, Dict, Iterable, Optional
 
 ABX_GUIDELINES = {
     # ── Beta-lactam / Penicillins ──────────────────────────────────────
@@ -743,3 +750,80 @@ ABX_GUIDELINES = {
         },
     },
 }
+VALID_AWARE_VALUES = {"Access", "Watch", "Reserve"}
+DEFAULT_SPECIMENS = ("Urine", "Blood", "Sputum", "Wound Swab", "Pus", "Stool", "CSF")
+
+
+def normalize_abx_key(text: str) -> str:
+    """Return a relaxed normalized key for antibiotic lookup."""
+    return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+
+
+def build_antibiotic_alias_index(data: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
+    index: Dict[str, str] = {}
+    for official_name, payload in data.items():
+        variants = [official_name, *payload.get("aliases", [])]
+        for variant in variants:
+            normalized = normalize_abx_key(variant)
+            if normalized:
+                index[normalized] = official_name
+    return index
+
+
+def get_antibiotic(name_or_alias: str) -> Optional[Dict[str, Any]]:
+    """Get a guideline record by official name or alias."""
+    normalized = normalize_abx_key(name_or_alias)
+    official_name = ABX_ALIAS_INDEX.get(normalized)
+    if official_name:
+        return ABX_GUIDELINES.get(official_name)
+    return ABX_GUIDELINES.get(name_or_alias)
+
+
+def validate_abx_guidelines(
+    known_organisms: Optional[Iterable[str]] = None,
+    known_specimens: Optional[Iterable[str]] = None,
+) -> list[str]:
+    """Run lightweight validation checks and return issue strings."""
+    issues: list[str] = []
+    organism_set = set(known_organisms or [])
+    specimen_set = set(known_specimens or DEFAULT_SPECIMENS)
+
+    for abx_name, payload in ABX_GUIDELINES.items():
+        required_keys = {
+            "priority", "class", "note", "renal_limit", "renal_note",
+            "hepatic_caution", "aware", "high_po", "preg_status",
+            "preg_note", "child_safe", "interacts_with", "aliases",
+            "organisms", "specimen_notes",
+        }
+        missing = sorted(required_keys - set(payload.keys()))
+        if missing:
+            issues.append(f"{abx_name}: missing keys -> {', '.join(missing)}")
+
+        aware = payload.get("aware")
+        if aware not in VALID_AWARE_VALUES:
+            issues.append(f"{abx_name}: invalid AWaRe value -> {aware}")
+
+        for specimen_name in payload.get("specimen_notes", {}):
+            if specimen_name not in specimen_set:
+                issues.append(f"{abx_name}: unknown specimen note -> {specimen_name}")
+
+        if organism_set:
+            for organism_name in payload.get("organisms", []):
+                if organism_name not in organism_set:
+                    issues.append(f"{abx_name}: organism not defined in organism profile -> {organism_name}")
+
+    return issues
+
+
+ABX_ALIAS_INDEX = build_antibiotic_alias_index(ABX_GUIDELINES)
+
+__all__ = [
+    "ABX_GUIDELINES",
+    "ABX_ALIAS_INDEX",
+    "DEFAULT_SPECIMENS",
+    "VALID_AWARE_VALUES",
+    "build_antibiotic_alias_index",
+    "get_antibiotic",
+    "normalize_abx_key",
+    "validate_abx_guidelines",
+]
