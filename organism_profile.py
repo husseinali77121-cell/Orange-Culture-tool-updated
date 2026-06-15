@@ -1,6 +1,16 @@
 # © 2025 Dr. Hussein Ali — Orange Lab, 6 October City, Egypt
 # Orange Culture Tool — Data Module
 # Unauthorized copying or distribution is prohibited.
+"""Organism profile dataset for Orange Culture Tool.
+
+Enhancements in this revision:
+- added helper lookup/validation utilities
+- added clinically relevant missing profiles (VRE, Rickettsia spp.)
+- exported normalization helpers for cross-module consistency checks
+"""
+
+import re
+from typing import Any, Dict, Iterable, Optional
 
 ORGANISM_PROFILE = {
     "E. coli": {
@@ -263,3 +273,103 @@ ORGANISM_PROFILE = {
         "note": "🔴 مقاومة طبيعية للكاربابينيم! TMP/SMX هو الخيار الأول. ينتقى بعد Meropenem.",
     },
 }
+# Additional clinically relevant profiles referenced by the antibiotic module.
+ORGANISM_PROFILE.update({
+    "VRE": {
+        "first_line": ["Linezolid", "Vancomycin"],
+        "second_line": [],
+        "third_line": [],
+        "avoid": [
+            "Cephalosporins (كل الجيل)",
+            "Carbapenems",
+            "Ertapenem",
+            "Amoxicillin + Clavulanic acid",
+            "Ampicillin/Sulbactam",
+        ],
+        "urine_note": "Vancomycin-resistant Enterococcus يحتاج مراجعة الحساسية المحلية؛ Linezolid خيار مهم في العدوى الجهازية.",
+        "specimen_context": {
+            "Blood": "🔴 VRE bacteremia — يحتاج علاج موجّه ومتابعة متخصصة.",
+            "Urine": "⚠️ VRE قد يظهر في UTI المعقد أو المرضى المنومين لفترات طويلة.",
+            "Wound Swab": "⚠️ قد يظهر في الجروح المزمنة والمستشفيات.",
+        },
+        "note": "🔴 VRE يعني مقاومة للفانكومايسين؛ يجب الاعتماد على علاج موجّه ونتيجة الحساسية.",
+    },
+    "Rickettsia spp.": {
+        "first_line": ["Doxycycline"],
+        "second_line": [],
+        "third_line": [],
+        "avoid": ["Beta-lactams", "Cephalosporins (كل الجيل)", "Aminoglycosides"],
+        "urine_note": "ليس مسببًا شائعًا في مزارع البول أو المزارع الروتينية.",
+        "specimen_context": {
+            "Blood": "⚠️ لا تُشخّص عادةً بالمزرعة الروتينية؛ التشخيص غالباً سريري/سيرولوجي/PCR.",
+        },
+        "note": "⚠️ Rickettsia ليست جرثومة مزرعية روتينية في هذا السياق، لكن أضيفت للحفاظ على اتساق البيانات العلاجية.",
+    },
+})
+
+# Guarantee a complete schema across all organism records.
+for _payload in ORGANISM_PROFILE.values():
+    _payload.setdefault("first_line", [])
+    _payload.setdefault("second_line", [])
+    _payload.setdefault("third_line", [])
+    _payload.setdefault("avoid", [])
+    _payload.setdefault("urine_note", "")
+    _payload.setdefault("specimen_context", {})
+    _payload.setdefault("note", "")
+
+GENERIC_DRUG_CLASS_TERMS = {
+    "cephalosporins (كل الجيل)",
+    "cephalosporins",
+    "beta-lactams",
+    "beta-lactams (alone)",
+    "aminoglycosides",
+    "carbapenems",
+    "tetracyclines",
+}
+
+
+def normalize_organism_key(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def get_organism_profile(name: str) -> Optional[Dict[str, Any]]:
+    direct = ORGANISM_PROFILE.get(name)
+    if direct:
+        return direct
+    normalized = normalize_organism_key(name)
+    for organism_name, payload in ORGANISM_PROFILE.items():
+        if normalize_organism_key(organism_name) == normalized:
+            return payload
+    return None
+
+
+def validate_organism_profile(known_antibiotics: Optional[Iterable[str]] = None) -> list[str]:
+    issues: list[str] = []
+    known_abx = set(known_antibiotics or [])
+
+    for organism_name, payload in ORGANISM_PROFILE.items():
+        required = {"first_line", "second_line", "third_line", "avoid", "urine_note", "specimen_context", "note"}
+        missing = sorted(required - set(payload.keys()))
+        if missing:
+            issues.append(f"{organism_name}: missing keys -> {', '.join(missing)}")
+
+        if known_abx:
+            for bucket_name in ("first_line", "second_line", "third_line"):
+                for abx_name in payload.get(bucket_name, []):
+                    if abx_name not in known_abx:
+                        issues.append(f"{organism_name}: {bucket_name} antibiotic missing in ABX_GUIDELINES -> {abx_name}")
+            for avoid_name in payload.get("avoid", []):
+                low = avoid_name.lower().strip()
+                if avoid_name not in known_abx and low not in GENERIC_DRUG_CLASS_TERMS:
+                    issues.append(f"{organism_name}: avoid item not found in ABX_GUIDELINES -> {avoid_name}")
+
+    return issues
+
+
+__all__ = [
+    "GENERIC_DRUG_CLASS_TERMS",
+    "ORGANISM_PROFILE",
+    "get_organism_profile",
+    "normalize_organism_key",
+    "validate_organism_profile",
+]
