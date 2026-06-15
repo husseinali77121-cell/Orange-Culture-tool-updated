@@ -1,8 +1,6 @@
-# Developed by Dr / Hussein Ali
 # © 2025 Dr. Hussein Ali — Orange Lab, 6 October City, Egypt
-# Orange Culture Tool — All Rights Reserved
+# Orange Culture Tool — Data Module
 # Unauthorized copying or distribution is prohibited.
-
 """Clinical antibiotic guideline dataset for Orange Culture Tool.
 
 Enhancements in this revision:
@@ -755,7 +753,6 @@ ABX_GUIDELINES = {
         },
     },
 }
-
 VALID_AWARE_VALUES = {"Access", "Watch", "Reserve"}
 DEFAULT_SPECIMENS = ("Urine", "Blood", "Sputum", "Wound Swab", "Pus", "Stool", "CSF")
 
@@ -774,10 +771,6 @@ def build_antibiotic_alias_index(data: Dict[str, Dict[str, Any]]) -> Dict[str, s
             if normalized:
                 index[normalized] = official_name
     return index
-
-
-# 🚀 التعديل الجوهري: تم نقل بناء الفهرس هنا بعد دوال التجهيز مباشرة وقبل أية دوال تستخدمه، لتجنب حدوث ImportError.
-ABX_ALIAS_INDEX = build_antibiotic_alias_index(ABX_GUIDELINES)
 
 
 def get_antibiotic(name_or_alias: str) -> Optional[Dict[str, Any]]:
@@ -824,6 +817,8 @@ def validate_abx_guidelines(
 
     return issues
 
+
+ABX_ALIAS_INDEX = build_antibiotic_alias_index(ABX_GUIDELINES)
 
 __all__ = [
     "ABX_ALIAS_INDEX",
