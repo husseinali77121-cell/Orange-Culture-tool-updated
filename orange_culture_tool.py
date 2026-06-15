@@ -8,12 +8,37 @@ import time
 import hashlib
 from datetime import datetime
 from difflib import SequenceMatcher
-from typing import Dict, List, Tuple, Any
+from typing import Any, Dict, List, Optional, Tuple
 
-import cv2
-import numpy as np
-import pytesseract
 import streamlit as st
+
+try:
+    import cv2
+    import numpy as np
+    import pytesseract
+    OCR_AVAILABLE = True
+    OCR_IMPORT_ERROR = ""
+except Exception as exc:
+    cv2 = None
+    np = None
+    pytesseract = None
+    OCR_AVAILABLE = False
+    OCR_IMPORT_ERROR = str(exc)
+
+from abx_guidelines import (
+    ABX_ALIAS_INDEX,
+    ABX_GUIDELINES,
+    DEFAULT_SPECIMENS,
+    normalize_abx_key,
+    validate_abx_guidelines,
+)
+from organism_profile import ORGANISM_PROFILE, validate_organism_profile
+from specimen_organism_map import (
+    SPECIMEN_ORDER,
+    SPECIMEN_ORGANISM_MAP,
+    get_organisms_for_specimen,
+    validate_specimen_organism_map,
+)
 
 # =========================================================
 # صفحة التطبيق
@@ -57,7 +82,10 @@ st.markdown("""
 # =========================================================
 # الثوابت العامة
 # =========================================================
-SESSION_TIMEOUT = 30 * 60  # 30 minutes
+SESSION_TIMEOUT = 30 * 60
+SIR_LABELS = {"S": "Sensitive", "I": "Intermediate", "R": "Resistant"}
+BACTERIA_TYPES = list(ORGANISM_PROFILE.keys())
+SPECIMEN_TYPES = list(SPECIMEN_ORDER or DEFAULT_SPECIMENS)
 
 AWARE_COLORS = {
     "Access": "🟢 Access",
@@ -70,7 +98,7 @@ COMMON_MEDS = [
     "Warfarin (مضادات التخثر)",
     "NSAIDs (مسكنات الألم)",
     "SSRI (أدوية الاكتئاب)",
-    "Valproic acid (مضادات الصرع)"
+    "Valproic acid (مضادات الصرع)",
 ]
 
 RENAL_BAN_REASONS = {
@@ -140,9 +168,6 @@ init_session_state()
 # =========================================================
 # أدوات مساعدة
 # =========================================================
-def normalize_key(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
-
 def fuzzy_match(a: str, b: str) -> float:
     a = (a or "").lower().strip()
     b = (b or "").lower().strip()
@@ -179,13 +204,48 @@ def get_renal_severity(crcl: float) -> str:
 def get_route_label(item: Dict[str, Any]) -> str:
     return "🟢 Oral preferred / PO-friendly" if item.get("high_po") else "💉 IV/IM only"
 
-def build_alias_index(abx_guidelines: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
-    index = {}
-    for abx_name, info in abx_guidelines.items():
-        variants = {abx_name, *info.get("aliases", [])}
-        for variant in variants:
-            index[normalize_key(variant)] = abx_name
-    return index
+def ensure_ocr_dependencies() -> None:
+    if OCR_AVAILABLE:
+        return
+    st.error(
+        "تعذر تحميل مكتبات OCR المطلوبة لتشغيل قراءة الصور.\n\n"
+        f"Runtime import error: {OCR_IMPORT_ERROR}"
+    )
+    st.stop()
+
+@st.cache_data(show_spinner=False)
+def get_startup_validation_issues() -> List[str]:
+    issues: List[str] = []
+    issues.extend(validate_abx_guidelines(known_organisms=ORGANISM_PROFILE.keys(), known_specimens=SPECIMEN_TYPES))
+    issues.extend(validate_organism_profile(known_antibiotics=ABX_GUIDELINES.keys()))
+    issues.extend(validate_specimen_organism_map(known_organisms=ORGANISM_PROFILE.keys()))
+
+    deduped: List[str] = []
+    seen = set()
+    for issue in issues:
+        if issue not in seen:
+            deduped.append(issue)
+            seen.add(issue)
+    return deduped
+
+def normalize_ocr_text(text: str) -> str:
+    cleaned = text or ""
+    replacements = {
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u00a0": " ",
+        "|": " ",
+    }
+    for old, new in replacements.items():
+        cleaned = cleaned.replace(old, new)
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+def best_default_index(options: List[str], preferred: Optional[str]) -> int:
+    if preferred and preferred in options:
+        return options.index(preferred)
+    return 0
 
 # =========================================================
 # صفحة تسجيل الدخول
@@ -315,175 +375,153 @@ def render_top_bar() -> None:
             logout("تم تسجيل الخروج بنجاح.")
 
 # =========================================================
-# قواعد البيانات السريرية — مفصولة في ملفات مستقلة
-#       1) abx_guidelines.py        -> ABX_GUIDELINES
-#       2) organism_profile.py      -> ORGANISM_PROFILE
-#       3) specimen_organism_map.py -> SPECIMEN_ORGANISM_MAP
-# =========================================================
-from abx_guidelines import ABX_GUIDELINES
-from organism_profile import ORGANISM_PROFILE
-from specimen_organism_map import SPECIMEN_ORGANISM_MAP
-
-BACTERIA_TYPES = list(ORGANISM_PROFILE.keys())
-SPECIMEN_TYPES = ["Urine", "Blood", "Sputum", "Wound Swab", "Pus", "Stool", "CSF"]
-ABX_ALIAS_INDEX = build_alias_index(ABX_GUIDELINES)
-
-# =========================================================
 # OCR ومعالجة الصور
 # =========================================================
-def preprocess_image(file_bytes: bytes) -> tuple[np.ndarray, np.ndarray]:
+def preprocess_image(file_bytes: bytes) -> Tuple[Any, Any]:
+    ensure_ocr_dependencies()
     arr = np.frombuffer(file_bytes, np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-
     if img is None:
         raise ValueError("تعذر قراءة الصورة. تأكد أن الملف صورة سليمة.")
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    # تحسين الجودة
     gray = cv2.resize(gray, None, fx=1.7, fy=1.7, interpolation=cv2.INTER_CUBIC)
     gray = cv2.GaussianBlur(gray, (3, 3), 0)
     gray = cv2.fastNlMeansDenoising(gray, None, 10, 7, 21)
 
-    # Adaptive threshold أفضل مع صور التقارير
     thresh = cv2.adaptiveThreshold(
-        gray, 255,
+        gray,
+        255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY, 31, 11
+        cv2.THRESH_BINARY,
+        31,
+        11,
     )
-
-    # Morphology خفيف لتحسين الحروف
     kernel = np.ones((1, 1), np.uint8)
     thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
-
     return img, thresh
 
-def detect_age(text: str) -> str:
-    patterns = [
-        r"(\d+)\s*[Yy]ears?",
-        r"Age[:\s]+(\d+)",
-        r"(\d+)\s*[Yy]\b"
-    ]
+def run_ocr(thresh: Any) -> str:
+    ensure_ocr_dependencies()
+    configs = ["--psm 6", "--psm 11", "--psm 4"]
+    outputs = []
+    for cfg in configs:
+        try:
+            txt = pytesseract.image_to_string(thresh, config=cfg)
+            txt = normalize_ocr_text(txt)
+            if txt:
+                outputs.append(txt)
+        except Exception:
+            continue
+    if not outputs:
+        raise RuntimeError("OCR failed: no text extracted")
+
+    return max(outputs, key=lambda x: len(re.sub(r"\s+", "", x)))
+
+def detect_age(text: str) -> Optional[int]:
+    patterns = [r"(\d+)\s*[Yy]ears?", r"Age[:\s]+(\d+)", r"(\d+)\s*[Yy]\b"]
     for pattern in patterns:
         match = re.search(pattern, text)
         if match:
-            return match.group(1)
-    return "25"
+            value = safe_int(match.group(1), -1)
+            if 0 <= value <= 120:
+                return value
+    return None
 
-def detect_sex(text_lower: str) -> str:
-    if "female" in text_lower or "sex: f" in text_lower or "gender: female" in text_lower:
+def detect_sex(text_lower: str) -> Optional[str]:
+    if any(token in text_lower for token in ["female", "sex: f", "gender: female"]):
         return "Female"
-    return "Male"
+    if any(token in text_lower for token in ["male", "sex: m", "gender: male"]):
+        return "Male"
+    return None
 
-def detect_specimen(text_lower: str) -> str:
+def detect_specimen(text_lower: str) -> Optional[str]:
+    specimen_hits = []
     for specimen in SPECIMEN_TYPES:
         if specimen.lower() in text_lower:
-            return specimen
-    return "Urine"
+            specimen_hits.append(specimen)
+    return specimen_hits[0] if specimen_hits else None
 
-def detect_organism(text_lower: str) -> str:
-    organism_counts = {}
+def detect_organism(text_lower: str) -> Optional[str]:
+    organism_counts: Dict[str, int] = {}
     for organism in BACTERIA_TYPES:
         count = text_lower.count(organism.lower())
         if count > 0:
             organism_counts[organism] = count
     if organism_counts:
         return max(organism_counts, key=organism_counts.get)
-    return "E. coli"
+    return None
 
-def classify_sir_from_line(line: str) -> str | None:
+def classify_sir_from_line(line: str) -> Optional[str]:
     ll = line.lower().strip()
-
-    if re.search(r"\b(s|sensitive|susceptible|sens)\b", ll):
+    tail_match = re.search(r"\b([sir])\b\s*$", ll)
+    if tail_match:
+        return tail_match.group(1).upper()
+    if re.search(r"\b(sensitive|susceptible|sens)\b", ll):
         return "S"
-    if re.search(r"\b(r|resistant|resist)\b", ll):
+    if re.search(r"\b(resistant|resist)\b", ll):
         return "R"
-    if re.search(r"\b(i|intermediate|inter)\b", ll):
+    if re.search(r"\b(intermediate|inter)\b", ll):
         return "I"
     return None
 
-def match_antibiotic_from_text(snippet: str) -> str | None:
-    snippet_norm = normalize_key(snippet)
+def match_antibiotic_from_text(snippet: str) -> Optional[str]:
+    snippet_norm = normalize_abx_key(snippet)
+    if not snippet_norm:
+        return None
 
-    # direct fast lookup
-    for alias_norm, abx_name in ABX_ALIAS_INDEX.items():
+    alias_items = sorted(ABX_ALIAS_INDEX.items(), key=lambda item: len(item[0]), reverse=True)
+    for alias_norm, abx_name in alias_items:
         if alias_norm and alias_norm in snippet_norm:
             return abx_name
 
-    # fuzzy fallback
     best_match = None
     best_score = 0.0
-
     for abx_name, info in ABX_GUIDELINES.items():
-        for variant in [abx_name] + info.get("aliases", []):
+        for variant in [abx_name, *info.get("aliases", [])]:
             score = fuzzy_match(variant, snippet)
             if score > best_score:
                 best_score = score
                 best_match = abx_name
-
-    return best_match if best_score >= 75 else None
+    return best_match if best_score >= 82 else None
 
 def extract_detected_drugs(full_text: str) -> List[str]:
-    text_lower = full_text.lower()
     detected = set()
-
-    words = re.findall(r"[A-Za-z0-9\-\+\/\.]+", text_lower)
-
-    for abx_name, info in ABX_GUIDELINES.items():
-        variants = [abx_name] + info.get("aliases", [])
-        found = False
-        for variant in variants:
-            variant_words = variant.lower().split()
-            for word in words:
-                if any(fuzzy_match(word, vw) >= 82 for vw in variant_words):
-                    found = True
-                    break
-            if found:
-                break
-        if found:
-            detected.add(abx_name)
-
-    return sorted(detected)
-
-@st.cache_data(show_spinner=False)
-def extract_all_data_cached(file_bytes: bytes) -> Dict[str, Any]:
-    try:
-        _, thresh = preprocess_image(file_bytes)
-        full_text = pytesseract.image_to_string(thresh, config="--psm 6")
-    except Exception as e:
-        raise RuntimeError(f"OCR failed: {e}")
-
-    text_lower = full_text.lower()
-
-    detected_age = detect_age(full_text)
-    detected_sex = detect_sex(text_lower)
-    detected_specimen = detect_specimen(text_lower)
-    detected_organism = detect_organism(text_lower)
-
-    sir_map = {}
     for line in full_text.splitlines():
         line = line.strip()
         if not line:
             continue
+        matched = match_antibiotic_from_text(line)
+        if matched:
+            detected.add(matched)
+    return sorted(detected)
 
+@st.cache_data(show_spinner=False)
+def extract_all_data_cached(file_bytes: bytes) -> Dict[str, Any]:
+    _, thresh = preprocess_image(file_bytes)
+    full_text = run_ocr(thresh)
+    text_lower = full_text.lower()
+
+    sir_map: Dict[str, str] = {}
+    for line in full_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
         result = classify_sir_from_line(line)
         if not result:
             continue
-
         matched_abx = match_antibiotic_from_text(line)
         if matched_abx:
             sir_map[matched_abx] = result
 
-    detected_drugs = extract_detected_drugs(full_text)
-
     return {
         "patient": {
-            "Age": detected_age,
-            "Sex": detected_sex,
-            "Specimen": detected_specimen,
-            "Organism": detected_organism,
+            "Age": detect_age(full_text),
+            "Sex": detect_sex(text_lower),
+            "Specimen": detect_specimen(text_lower),
+            "Organism": detect_organism(text_lower),
         },
-        "drugs": detected_drugs,
+        "drugs": extract_detected_drugs(full_text),
         "sir_map": sir_map,
         "raw_text": full_text,
     }
@@ -499,16 +537,22 @@ def is_intrinsically_avoided(organism_type: str, drug_name: str, drug_info: Dict
     for avoid_item in organism_avoid:
         av_low = avoid_item.lower().strip()
 
-        # direct match
         if av_low in d_low or d_low in av_low:
             return True
 
-        # class map
         mapped_classes = ORGANISM_AVOID_CLASS_MAP.get(av_low)
         if mapped_classes and any(cls in d_class for cls in mapped_classes):
             return True
 
     return False
+
+def build_banned_item(name: str, category: str, reason_short: str, reason_detail: str) -> Dict[str, str]:
+    return {
+        "name": name,
+        "category": category,
+        "reason_short": reason_short,
+        "reason_detail": reason_detail,
+    }
 
 def analyze_antibiotics(
     final_drugs: List[str],
@@ -523,11 +567,11 @@ def analyze_antibiotics(
     current_meds: List[str],
     sir_map: Dict[str, str],
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
-    allowed = []
-    warned = []
-    banned = []
-    preg_warn_items = []
-    interactions_alerts = []
+    allowed: List[Dict[str, Any]] = []
+    warned: List[Dict[str, Any]] = []
+    banned: List[Dict[str, Any]] = []
+    preg_warn_items: List[Dict[str, Any]] = []
+    interactions_alerts: List[str] = []
 
     for drug in final_drugs:
         if drug not in ABX_GUIDELINES:
@@ -536,113 +580,85 @@ def analyze_antibiotics(
         info = ABX_GUIDELINES[drug]
         d_low = drug.lower()
         cls = info.get("class", "").lower()
+        culture_result = sir_map.get(drug)
 
-        # مقاوم بالمزرعة
-        if sir_map.get(drug) == "R":
-            banned.append({
-                "name": drug,
-                "category": "resistant",
-                "reason_short": "مقاوم (R) في نتيجة المزرعة.",
-                "reason_detail": (
-                    f"المزرعة أثبتت أن {drug} لا يثبط نمو الجرثومة.\n"
-                    "MIC أعلى من الحد العلاجي المتوقع → خطر فشل علاجي مرتفع."
-                ),
-            })
+        if culture_result == "R":
+            banned.append(build_banned_item(
+                drug,
+                "resistant",
+                "مقاوم (R) في نتيجة المزرعة.",
+                f"المزرعة أثبتت أن {drug} لا يثبط نمو الجرثومة. MIC أعلى من الحد العلاجي المتوقع → خطر فشل علاجي مرتفع.",
+            ))
             continue
 
-        # تعارضات دوائية
         for med in current_meds:
             if med in info.get("interacts_with", []):
                 interactions_alerts.append(f"⚡ تعارض: {drug} مع {med}")
 
-        # تحذير كبدي
         if is_hepatic and info.get("hepatic_caution"):
             interactions_alerts.append(f"🏥 تحذير كبدي: {drug} — يحتاج متابعة أو تعديل حسب الحالة.")
 
-        # intrinsic resistance
         if is_intrinsically_avoided(organism_type, drug, info):
-            banned.append({
-                "name": drug,
-                "category": "organism",
-                "reason_short": f"غير فعال لـ {organism_type} طبيعياً.",
-                "reason_detail": (
-                    f"{drug} لديه مقاومة طبيعية أو عدم فعالية متوقعة ضد {organism_type}.\n"
-                    "استخدامه قد يؤدي إلى فشل علاجي."
-                ),
-            })
+            banned.append(build_banned_item(
+                drug,
+                "organism",
+                f"غير فعال لـ {organism_type} طبيعياً.",
+                f"{drug} لديه مقاومة طبيعية أو عدم فعالية متوقعة ضد {organism_type}. استخدامه قد يؤدي إلى فشل علاجي.",
+            ))
             continue
 
-        # MRSA special logic
-        if organism_type == "MRSA":
-            if any(x in info.get("class", "") for x in ["Penicillin", "Cephalosporin"]):
-                banned.append({
-                    "name": drug,
-                    "category": "organism",
-                    "reason_short": "بيتا-لاكتام — لا يعمل على MRSA.",
-                    "reason_detail": (
-                        "MRSA يحمل آلية مقاومة mecA / PBP2a، لذلك معظم البيتا-لاكتام غير فعالة."
-                    ),
-                })
-                continue
+        if organism_type == "MRSA" and any(x in info.get("class", "") for x in ["Penicillin", "Cephalosporin"]):
+            banned.append(build_banned_item(
+                drug,
+                "organism",
+                "بيتا-لاكتام — لا يعمل على MRSA.",
+                "MRSA يحمل آلية مقاومة mecA / PBP2a، لذلك معظم البيتا-لاكتام غير فعالة.",
+            ))
+            continue
 
-        # pregnancy banned
         if is_preg and info.get("preg_status") == "Banned":
-            banned.append({
-                "name": drug,
-                "category": "pregnancy",
-                "reason_short": info.get("preg_note", "ممنوع في الحمل").splitlines()[0],
-                "reason_detail": info.get("preg_note", "ممنوع في الحمل"),
-            })
+            banned.append(build_banned_item(
+                drug,
+                "pregnancy",
+                info.get("preg_note", "ممنوع في الحمل").splitlines()[0],
+                info.get("preg_note", "ممنوع في الحمل"),
+            ))
             continue
 
-        # pregnancy warning
         if is_preg and info.get("preg_status") == "Warn":
             preg_warn_items.append({"name": drug, **info})
 
-        # children
         if age < 18 and not info.get("child_safe", True):
             if "fluoroquinolone" in cls:
-                banned.append({
-                    "name": drug,
-                    "category": "child",
-                    "reason_short": "غير مناسب < 18 سنة.",
-                    "reason_detail": CHILD_BAN_REASONS["fluoroquinolone"],
-                })
+                banned.append(build_banned_item(drug, "child", "غير مناسب < 18 سنة.", CHILD_BAN_REASONS["fluoroquinolone"]))
                 continue
-            elif "tetracycline" in cls and age < 8:
-                banned.append({
-                    "name": drug,
-                    "category": "child",
-                    "reason_short": "غير مناسب < 8 سنوات.",
-                    "reason_detail": CHILD_BAN_REASONS["tetracycline"],
-                })
+            if "tetracycline" in cls and age < 8:
+                banned.append(build_banned_item(drug, "child", "غير مناسب < 8 سنوات.", CHILD_BAN_REASONS["tetracycline"]))
                 continue
-            else:
-                banned.append({
-                    "name": drug,
-                    "category": "child",
-                    "reason_short": "غير مفضل للأطفال.",
-                    "reason_detail": "يحتاج تقييم متخصص أو لا يُنصح به روتينياً لهذه الفئة العمرية.",
-                })
-                continue
-
-        # renal absolute ban
-        if is_renal and "nitrofurantoin" in d_low and cl_cr < 30:
-            banned.append({
-                "name": drug,
-                "category": "renal",
-                "reason_short": f"ممنوع — CrCl {cl_cr:.1f} < 30 ml/min",
-                "reason_detail": (
-                    f"CrCl = {cl_cr:.1f} مل/د — أقل من الحد المطلوب.\n"
-                    "لن يحقق تركيزًا بوليًا علاجيًا، وقد يتراكم مسببًا سُمية."
-                ),
-            })
+            banned.append(build_banned_item(
+                drug,
+                "child",
+                "غير مفضل للأطفال.",
+                "يحتاج تقييم متخصص أو لا يُنصح به روتينياً لهذه الفئة العمرية.",
+            ))
             continue
 
-        # renal dose adjustment
+        if is_renal and "nitrofurantoin" in d_low and cl_cr < 30:
+            banned.append(build_banned_item(
+                drug,
+                "renal",
+                f"ممنوع — CrCl {cl_cr:.1f} < 30 ml/min",
+                f"CrCl = {cl_cr:.1f} مل/د — أقل من الحد المطلوب. لن يحقق تركيزًا بوليًا علاجيًا، وقد يتراكم مسببًا سُمية.",
+            ))
+            continue
+
         renal_limit = info.get("renal_limit", 0)
         if is_renal and renal_limit > 0 and cl_cr <= renal_limit:
-            warned.append({"name": drug, **info})
+            warned.append({"name": drug, **info, "warning_reason": "renal_adjustment"})
+            continue
+
+        if culture_result == "I":
+            warned.append({"name": drug, **info, "warning_reason": "intermediate_culture"})
             continue
 
         allowed.append({"name": drug, **info})
@@ -650,7 +666,6 @@ def analyze_antibiotics(
     allowed = sorted(allowed, key=lambda x: x.get("priority", 999))
     warned = sorted(warned, key=lambda x: x.get("priority", 999))
     preg_warn_items = sorted(preg_warn_items, key=lambda x: x.get("priority", 999))
-
     return allowed, warned, banned, preg_warn_items, sorted(set(interactions_alerts))
 
 # =========================================================
@@ -866,6 +881,13 @@ if not st.session_state.authenticated:
 handle_session_timeout()
 render_top_bar()
 
+startup_issues = get_startup_validation_issues()
+if startup_issues:
+    with st.expander("🧪 Data validation at startup", expanded=False):
+        st.warning(f"Found {len(startup_issues)} data issue(s).")
+        for issue in startup_issues:
+            st.write(f"- {issue}")
+
 st.title("🛡️ Orange Culture Tool")
 st.caption("AI-Assisted Antibiotic Decision Support — Egyptian Market Edition")
 
@@ -907,23 +929,19 @@ if uploaded:
         culture_type = st.selectbox(
             "🧫 Specimen",
             SPECIMEN_TYPES,
-            index=SPECIMEN_TYPES.index(patient["Specimen"])
-            if patient["Specimen"] in SPECIMEN_TYPES else 0
+            index=best_default_index(SPECIMEN_TYPES, patient.get("Specimen"))
         )
 
-        filtered_organisms = [
-            org for org in SPECIMEN_ORGANISM_MAP.get(culture_type, BACTERIA_TYPES)
-            if org in ORGANISM_PROFILE
-        ]
+        filtered_organisms = [org for org in get_organisms_for_specimen(culture_type) if org in ORGANISM_PROFILE]
+        if not filtered_organisms:
+            filtered_organisms = BACTERIA_TYPES
 
-        ocr_org = patient["Organism"]
-        default_idx = filtered_organisms.index(ocr_org) if ocr_org in filtered_organisms else 0
-
+        ocr_org = patient.get("Organism")
         organism_type = st.selectbox(
             "🦠 Organism",
             filtered_organisms,
-            index=default_idx,
-            help=f"بكتيريا شائعة في عينة {culture_type}"
+            index=best_default_index(filtered_organisms, ocr_org),
+            help=f"بكتيريا شائعة في عينة {culture_type}",
         )
 
         if organism_type in ORGANISM_PROFILE:
@@ -946,18 +964,9 @@ if uploaded:
 
         st.divider()
 
-        age = st.number_input(
-            "Age (years)",
-            min_value=0,
-            max_value=120,
-            value=safe_int(patient["Age"], 25)
-        )
-
-        sex = st.selectbox(
-            "Gender",
-            ["Female", "Male"],
-            index=0 if patient["Sex"] == "Female" else 1
-        )
+        age = st.number_input("Age (years)", min_value=0, max_value=120, value=safe_int(patient.get("Age"), 25))
+        default_sex = patient.get("Sex") if patient.get("Sex") in ["Female", "Male"] else "Male"
+        sex = st.selectbox("Gender", ["Female", "Male"], index=0 if default_sex == "Female" else 1)
 
         weight = st.number_input(
             "Weight (kg)",
@@ -1058,10 +1067,13 @@ if uploaded:
                     st.error(f"💊 {item['name']}  [{cat_label}]\n{item['reason_short']}")
 
         if warned:
-            with st.expander("🟡 Dose Adjustment Required", expanded=True):
+            with st.expander("🟡 Warnings / Dose Adjustment Required", expanded=True):
                 for item in warned:
                     sir_tag = f" [{sir_map.get(item['name'], '')}]" if sir_map else ""
-                    st.warning(f"**{item['name']}{sir_tag}** — {item.get('renal_note', '')}")
+                    if item.get("warning_reason") == "intermediate_culture":
+                        st.warning(f"**{item['name']}{sir_tag}** — Intermediate (I) on culture, use only after clinical review.")
+                    else:
+                        st.warning(f"**{item['name']}{sir_tag}** — {item.get('renal_note', '')}")
 
         if allowed:
             st.success(f"🟢 {len(allowed)} Recommended Option(s)")
@@ -1115,6 +1127,9 @@ if uploaded:
                 mime="text/plain",
                 use_container_width=True,
             )
+
+            with st.expander("📋 Report Preview (copy-friendly)", expanded=False):
+                st.text_area("Clinical Report", report_txt, height=380, label_visibility="collapsed")
 
 st.divider()
 st.markdown("""
