@@ -826,8 +826,8 @@ def validate_abx_guidelines(
 
 
 __all__ = [
-    "ABX_GUIDELINES",
     "ABX_ALIAS_INDEX",
+    "ABX_GUIDELINES",
     "DEFAULT_SPECIMENS",
     "VALID_AWARE_VALUES",
     "build_antibiotic_alias_index",
