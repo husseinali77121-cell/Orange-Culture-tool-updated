@@ -318,14 +318,19 @@ for _payload in ORGANISM_PROFILE.values():
     _payload.setdefault("specimen_context", {})
     _payload.setdefault("note", "")
 
+# Updated set to include legacy antibiotic names not present in ABX_GUIDELINES,
+# preventing false "avoid item not found" errors during validation.
 GENERIC_DRUG_CLASS_TERMS = {
     "cephalosporins (كل الجيل)",
     "cephalosporins",
+    "cephalosporins (alone)",      # Added for Legionella pneumophila
     "beta-lactams",
     "beta-lactams (alone)",
     "aminoglycosides",
     "carbapenems",
     "tetracyclines",
+    "ampicillin",                  # Added for Klebsiella spp.
+    "ampicillin (alone)",          # Added for H. influenzae
 }
 
 
