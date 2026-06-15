@@ -1,3 +1,7 @@
+# © 2025 Dr / Hussein Ali — Orange Lab, 6 October City, Egypt
+# Orange Culture Tool — All Rights Reserved
+# Unauthorized copying or distribution is prohibited.
+
 """Organism profile dataset for Orange Culture Tool.
 
 Enhancements in this revision:
