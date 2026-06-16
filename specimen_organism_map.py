@@ -9,7 +9,7 @@ Enhancements in this revision:
 - expanded VRE coverage in high-yield specimens
 """
 
-from typing import Iterable
+from typing import Iterable, Optional
 
 SPECIMEN_ORGANISM_MAP = {
     "Urine": [
@@ -60,18 +60,21 @@ def get_organisms_for_specimen(specimen_name: str) -> list[str]:
     return list(SPECIMEN_ORGANISM_MAP.get(specimen_name, []))
 
 
-def validate_specimen_organism_map(known_organisms: Iterable[str]) -> list[str]:
+def validate_specimen_organism_map(known_organisms: Optional[Iterable[str]] = None) -> list[str]:
     issues: list[str] = []
-    organism_set = set(known_organisms)
+    organism_set = set(known_organisms or [])
+    should_validate_organisms = bool(organism_set)
+
     for specimen_name, organisms in SPECIMEN_ORGANISM_MAP.items():
         if specimen_name not in SPECIMEN_ORDER:
             issues.append(f"Unknown specimen key -> {specimen_name}")
         if not organisms:
             issues.append(f"{specimen_name}: organism list is empty")
         for organism_name in organisms:
-            if organism_name not in organism_set:
+            if should_validate_organisms and organism_name not in organism_set:
                 issues.append(f"{specimen_name}: organism not found in profile -> {organism_name}")
     return issues
+
 
 
 __all__ = [
