@@ -610,7 +610,7 @@ def analyze_antibiotics(
             ))
             continue
 
-                        if organism_type == "MRSA" and any(x in info.get("class", "") for x in ["Penicillin", "Cephalosporin", "Carbapenem"]):
+         if organism_type == "MRSA" and any(x in info.get("class", "") for x in ["Penicillin", "Cephalosporin", "Carbapenem"]):
             banned.append(build_banned_item(
                 drug,
                 "organism",
