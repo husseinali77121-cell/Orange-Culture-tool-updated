@@ -610,14 +610,15 @@ def analyze_antibiotics(
             ))
             continue
 
-        if organism_type == "MRSA" and any(x in info.get("class", "") for x in ["Penicillin", "Cephalosporin"]):
+                if organism_type == "MRSA" and any(x in info.get("class", "") for x in ["Penicillin", "Cephalosporin", "Carbapenem"]):
             banned.append(build_banned_item(
                 drug,
                 "organism",
                 "بيتا-لاكتام — لا يعمل على MRSA.",
-                "MRSA يحمل آلية مقاومة mecA / PBP2a، لذلك معظم البيتا-لاكتام غير فعالة.",
+                "MRSA يحمل آلية مقاومة mecA / PBP2a، لذلك البيتا-لاكتام—including carbapenems—غير فعالة سريرياً في هذا السياق.",
             ))
             continue
+
 
         if is_preg and info.get("preg_status") == "Banned":
             preg_note = info.get("preg_note") or "ممنوع في الحمل"
