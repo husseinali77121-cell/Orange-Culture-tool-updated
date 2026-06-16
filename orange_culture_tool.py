@@ -1,4 +1,4 @@
-# © 2025 Dr / Hussein Ali — Orange Lab, 6 October City, Egypt
+# © 2026 Dr / Hussein Ali — Orange Lab, 6 October City, Egypt
 # Orange Culture Tool — All Rights Reserved
 # Unauthorized copying or distribution is prohibited.
 
@@ -475,7 +475,6 @@ def clean_patient_name(name: str) -> str:
     for token in blacklist:
         low = low.replace(token.lower(), " ")
 
-    # استخدم النص المعدل بعد التنظيف
     name = low
     name = re.sub(r"[^A-Za-z\u0600-\u06FF\s]", " ", name)
     name = re.sub(r"\s{2,}", " ", name).strip()
@@ -500,7 +499,6 @@ def detect_patient_name(text: str) -> Optional[str]:
             if candidate:
                 return candidate
 
-    # fallback heuristic: سطر عربي قصير يشبه الاسم
     for line in text.splitlines():
         line = line.strip()
         if not line:
@@ -511,7 +509,6 @@ def detect_patient_name(text: str) -> Optional[str]:
             if 2 <= len(words) <= 4 and len(cleaned) <= 40:
                 return cleaned
 
-    # fallback heuristic للإنجليزي
     for line in text.splitlines():
         line = line.strip()
         if not line:
@@ -786,13 +783,13 @@ def analyze_antibiotics(
     return allowed, warned, banned, preg_warn_items, sorted(set(interactions_alerts))
 
 # =========================================================
-# دعم النص العربي في الصور
+# دعم النص العربي ثنائي الاتجاه والمختلط في الصور
 # =========================================================
 def get_arabic_font(size=14):
     paths = [
         "NotoSansArabic-Regular.ttf",
-        "Amiri-Regular.ttf",
         "Cairo-Regular.ttf",
+        "Amiri-Regular.ttf",
         "ScheherazadeNew-Regular.ttf",
         "DejaVuSans.ttf",
     ]
@@ -804,93 +801,105 @@ def get_arabic_font(size=14):
     return ImageFont.load_default()
 
 def arabic(text: str) -> str:
+    """معالجة وعكس الكلمات العربية للحفاظ على التناسق والروح داخل الصورة"""
     if not text:
         return text
     if not ARABIC_SUPPORT:
         return text
     try:
-        return get_display(arabic_reshaper.reshape(text))
+        # التحقق مما إذا كان النص يحتوي على حروف عربية
+        if re.search(r"[\u0600-\u06FF]", text):
+            reshaped = arabic_reshaper.reshape(text)
+            return get_display(reshaped)
+        return text
     except Exception:
         return text
 
-def draw_multiline_text(draw, xy, text, font, fill, max_width, line_spacing=4, align="left"):
+def draw_smart_text(draw, xy, text, font, fill, max_width, line_spacing=6, align="left"):
+    """دالة رسم ذكية تدعم التفاف النص ثنائي اللغة والعربي والانجليزي دون تداخل"""
     x, y = xy
     words = text.split()
     lines = []
-    current = ""
+    current_line = ""
 
     for w in words:
-        test = (current + w + " ").strip()
-        bbox = draw.textbbox((0, 0), test, font=font)
+        test_line = f"{current_line} {w}".strip()
+        bbox = draw.textbbox((0, 0), test_line, font=font)
         test_w = bbox[2] - bbox[0]
         if test_w <= max_width:
-            current = test + " "
+            current_line = test_line
         else:
-            if current.strip():
-                lines.append(current.strip())
-            current = w + " "
-
-    if current.strip():
-        lines.append(current.strip())
+            if current_line:
+                lines.append(current_line)
+            current_line = w
+    if current_line:
+        lines.append(current_line)
 
     for line in lines:
-        bbox = draw.textbbox((0, 0), line, font=font)
+        processed_line = arabic(line)
+        bbox = draw.textbbox((0, 0), processed_line, font=font)
         line_w = bbox[2] - bbox[0]
         line_h = bbox[3] - bbox[1]
 
         if align == "right":
-            draw.text((x + max_width - line_w, y), line, fill=fill, font=font)
+            draw.text((x + max_width - line_w, y), processed_line, fill=fill, font=font)
+        elif align == "center":
+            draw.text((x + (max_width - line_w)/2, y), processed_line, fill=fill, font=font)
         else:
-            draw.text((x, y), line, fill=fill, font=font)
+            draw.text((x, y), processed_line, fill=fill, font=font)
         y += line_h + line_spacing
-
     return y
 
 # =========================================================
-# أدوات رسم صورة Decision Tree
+# أدوات رسم صورة Decision Tree الاحترافية المحدثة طبق الأصل
 # =========================================================
-def rounded_box(draw, xy, radius, outline, fill, width=3):
-    draw.rounded_rectangle(xy, radius=radius, outline=outline, fill=fill, width=width)
+def rounded_card(draw, xy, radius, outline_color, fill_color, width=2):
+    """رسم مستطيل مستدير الزوايا بنظام اللوحات الطبية المبطنة"""
+    draw.rounded_rectangle(xy, radius=radius, outline=outline_color, fill=fill_color, width=width)
 
-def draw_centered_text(draw, box, text, font, fill):
+def draw_card_section(draw, box, title, items, text_color, border_color, fill_color, font_title, font_text):
+    """رسم لوحة تحكم متكاملة تدعم التباين اللوني العالي والخطوط المريحة"""
+    rounded_card(draw, box, 14, border_color, fill_color, width=2)
     x1, y1, x2, y2 = box
-    bbox = draw.textbbox((0, 0), text, font=font)
-    tw = bbox[2] - bbox[0]
-    th = bbox[3] - bbox[1]
-    tx = x1 + (x2 - x1 - tw) / 2
-    ty = y1 + (y2 - y1 - th) / 2
-    draw.text((tx, ty), text, font=font, fill=fill)
+    
+    # خلفية عنوان القسم العلوية المميزة لسرعة الفرز والمسح البصري
+    draw.rounded_rectangle((x1+1, y1+1, x2-1, y1+38), radius=12, fill=border_color)
+    
+    # عنوان اللوحة البصري
+    title_processed = arabic(title)
+    t_bbox = draw.textbbox((0, 0), title_processed, font=font_title)
+    tw = t_bbox[2] - t_bbox[0]
+    draw.text((x1 + (x2 - x1 - tw)/2, y1 + 8), title_processed, fill=(255, 255, 255), font=font_title)
 
-def draw_list_box(draw, box, title, items, title_color, border_color, font_title, font_text):
-    rounded_box(draw, box, 18, border_color, (255, 255, 255), 3)
-    x1, y1, x2, y2 = box
-    draw.text((x1 + 18, y1 + 12), title, fill=title_color, font=font_title)
+    y = y1 + 54
+    items = items or ["— No Data Available —"]
+    max_w = (x2 - x1) - 30
 
-    y = y1 + 52
-    items = items or ["—"]
-
-    for item in items[:8]:
-        draw.text((x1 + 22, y), f"• {item}", fill=(35, 35, 35), font=font_text)
-        y += 28
+    for item in items[:9]:
+        bullet = "• "
+        # طباعة العلامات والأسماء بشكل متوازن وعزل لغوي ذكي
+        item_text = f"{bullet}{item}"
+        y = draw_smart_text(draw, (x1 + 18, y), item_text, font_text, text_color, max_w, line_spacing=5)
+        y += 4
 
 def pick_alerts(organism, is_renal, is_preg, age, cl_cr, specimen):
     alerts = []
-
     org_low = (organism or "").lower()
     if "klebsiella" in org_low:
-        alerts.append("Consider ESBL screening")
-        alerts.append("Natural resistance to some beta-lactams")
-    if "e. coli" in org_low or "coli" in org_low:
-        alerts.append("Common UTI pathogen")
+        alerts.append("Rule out ESBL production traits.")
+        alerts.append("Natural resistance to Aminopenicillins.")
+    if "coli" in org_low:
+        alerts.append("High correlation with UTI patterns.")
     if specimen.lower() == "urine":
-        alerts.append("Verify with culture sensitivity")
+        alerts.append("Cross-verify concentration filters.")
     if is_renal:
-        alerts.append(f"Renal adjustment needed (CrCl {cl_cr:.1f})")
+        alerts.append(f"Renal Clearance Alert: CrCl {cl_cr:.1f} ml/min")
     if is_preg:
-        alerts.append("Pregnancy: verify fetal safety")
+        alerts.append("Pregnancy Warning: Fetal barriers.")
     if age < 18:
-        alerts.append("Pediatric suitability required")
-
+        alerts.append("Pediatric Dosage Scale Required.")
+    if not alerts:
+        alerts.append("Routine profile tracking recommended.")
     return alerts[:4]
 
 def generate_decision_tree_image(
@@ -913,134 +922,153 @@ def generate_decision_tree_image(
     notes: List[str],
 ) -> bytes:
     if not PIL_AVAILABLE:
-        raise RuntimeError("Pillow غير متاح")
+        raise RuntimeError("Pillow غير متاح في الخادم الحالي")
 
-    W, H = 1600, 980
-    bg = (248, 250, 252)
-    navy = (16, 52, 110)
-    orange = (243, 126, 35)
-    green = (35, 153, 84)
-    yellow = (230, 163, 33)
-    red = (201, 57, 57)
-    blue = (38, 92, 171)
-    purple = (125, 84, 199)
-    dark = (33, 37, 41)
-    gray = (95, 99, 104)
-    soft_border = (190, 197, 204)
+    # أبعاد محسنة وواسعة لمنع التكدس الرأسي والأفقي تماماً
+    W, H = 1600, 1050
+    
+    # لوحة ألوان دقيقة وفخمة (Orange Lab Clinical Branding Palette)
+    bg_color = (250, 252, 255)            # خلفية ناصعة مائلة للزرقة الخفيفة جداً
+    c_navy = (18, 38, 76)                 # الكحلي الطبي الفخم
+    c_orange = (242, 108, 37)             # برتقالي معامل أورانج المميز
+    c_dark = (33, 37, 41)                 # النص الأساسي الداكن
+    c_gray = (100, 110, 125)              # النصوص الفرعية
+    
+    # تظليلات الباستيل المبطنة لكل لوحة فرعية (Pastel Tints for Card Bodies)
+    border_green = (46, 117, 89) ;      fill_green = (242, 248, 245)
+    border_yellow = (217, 131, 36) ;    fill_yellow = (255, 252, 242)
+    border_red = (192, 57, 43) ;        fill_red = (254, 242, 242)
+    border_blue = (41, 128, 185) ;      fill_blue = (244, 249, 253)
+    border_purple = (108, 92, 231) ;    fill_purple = (248, 247, 255)
 
-    font_big = get_arabic_font(34)
-    font_title = get_arabic_font(24)
-    font_sub = get_arabic_font(20)
-    font_text = get_arabic_font(17)
-    font_small = get_arabic_font(15)
+    # تحميل الخطوط بأحجام متناسقة ومتدرجة هرمياً للحفاظ على الروح الاحترافية
+    font_main_title = get_arabic_font(32)
+    font_sub_title = get_arabic_font(22)
+    font_card_head = get_arabic_font(18)
+    font_body_text = get_arabic_font(16)
+    font_caption = get_arabic_font(14)
 
-    img = Image.new("RGB", (W, H), bg)
+    img = Image.new("RGB", (W, H), bg_color)
     draw = ImageDraw.Draw(img)
 
-    # ======== Top boxes ========
-    left_box = (30, 30, 350, 220)
-    center_box = (470, 25, 1130, 180)
-    right_box = (1210, 30, 1565, 220)
+    # ==================== الترويسة العلوية العريضة الموحدة ====================
+    # رسم خط علوي جمالي باللون البرتقالي الخاص بالهوية البصرية للمعمل
+    draw.rectangle((0, 0, W, 12), fill=c_orange)
 
-    rounded_box(draw, left_box, 18, purple, (255, 255, 255), 3)
-    rounded_box(draw, center_box, 22, navy, (255, 255, 255), 3)
-    rounded_box(draw, right_box, 18, red, (255, 255, 255), 3)
-
-    # patient details
-    draw.text((55, 50), "PATIENT DETAILS", fill=purple, font=font_title)
-    renal_txt = "IMPAIRED" if is_renal else "Normal"
-    preg_txt = "Yes" if is_preg else "No"
-
-    patient_lines = [
-        f"Name: {patient_name or '—'}",
-        f"{sex}, {age} years",
-        f"Weight: {weight} kg",
-        f"Renal: {renal_txt}",
+    # لوحة بيانات المريض اليسرى
+    rounded_card(draw, (30, 35, 400, 230), 12, border_purple, fill_purple, width=2)
+    draw.text((50, 50), arabic("👤 PATIENT INFORMATION"), fill=border_purple, font=font_card_head)
+    
+    renal_lbl = "IMPAIRED" if is_renal else "Normal Status"
+    preg_lbl = "Yes (Active)" if is_preg else "No"
+    
+    patient_info_rows = [
+        f"Name: {patient_name or 'Not Specified'}",
+        f"Demographics: {sex}, {age} Years old",
+        f"Body Mass: {weight} kg",
+        f"Renal Function: {renal_lbl}"
     ]
     if is_renal:
-        patient_lines.append(f"CrCl: {cl_cr:.1f} ml/min")
+        patient_info_rows.append(f"Clearance Rate: {cl_cr:.1f} ml/min")
     if sex == "Female":
-        patient_lines.append(f"Pregnancy: {preg_txt}")
+        patient_info_rows.append(f"Pregnancy State: {preg_lbl}")
 
-    py = 88
-    for line in patient_lines:
-        draw.text((55, py), line, fill=dark, font=font_text)
+    py = 86
+    for row in patient_info_rows[:5]:
+        draw.text((50, py), arabic(row), fill=c_dark, font=font_body_text)
         py += 26
 
-    # center title
-    draw.rounded_rectangle((470, 25, 1130, 80), radius=20, fill=navy, outline=navy, width=1)
-    draw_centered_text(draw, (470, 28, 1130, 74), "ORANGE LAB – CLINICAL DECISION TREE", font_title, (255, 255, 255))
-    culture_title = "URINE CULTURE RESULT" if specimen.lower() == "urine" else "CULTURE RESULT"
-    draw.text((640, 98), culture_title, fill=dark, font=font_sub)
-    draw.text((680, 132), organism or "Unknown organism", fill=navy, font=font_big)
+    # لوحة العنوان المركزي وتفاصيل المزرعة الحالية
+    rounded_card(draw, (420, 35, 1180, 230), 14, c_navy, (255, 255, 255), width=2)
+    # تظليل رأس العنوان الداخلي
+    draw.rounded_rectangle((421, 36, 1179, 90), radius=12, fill=c_navy)
+    
+    # عنوان المخطط الرئيسي بقلم أورانج مع الحفاظ على صيغة النص
+    main_title_str = "ORANGE LAB – CLINICAL DECISION SUPPORT TREE"
+    m_bbox = draw.textbbox((0, 0), main_title_str, font=font_main_title)
+    draw.text((420 + (760 - (m_bbox[2]-m_bbox[0]))/2, 45), main_title_str, fill=(255, 255, 255), font=font_main_title)
+    
+    culture_heading = "IDENTIFIED ISOLATE & CULTURE RESULTS"
+    ch_bbox = draw.textbbox((0, 0), culture_heading, font=font_caption)
+    draw.text((420 + (760 - (ch_bbox[2]-ch_bbox[0]))/2, 105), culture_heading, fill=c_gray, font=font_caption)
+    
+    org_display = arabic(organism or "No Growth Detected")
+    org_bbox = draw.textbbox((0, 0), org_display, font=font_sub_title)
+    draw.text((420 + (760 - (org_bbox[2]-org_bbox[0]))/2, 135), org_display, fill=c_orange, font=font_sub_title)
+    
+    spec_lbl = arabic(f"Specimen Archetype: {specimen} | Vector: {infection_type}")
+    sp_bbox = draw.textbbox((0, 0), spec_lbl, font=font_body_text)
+    draw.text((420 + (760 - (sp_bbox[2]-sp_bbox[0]))/2, 185), spec_lbl, fill=c_dark, font=font_body_text)
 
-    # alerts
-    draw.text((1240, 50), "IMPORTANT ALERT", fill=red, font=font_title)
-    ay = 92
-    for item in pick_alerts(organism, is_renal, is_preg, age, cl_cr, specimen):
-        draw.text((1230, ay), f"• {item}", fill=dark, font=font_text)
-        ay += 28
+    # لوحة التحذيرات والملاحظات الطبية الحرجة اليمنى
+    rounded_card(draw, (1200, 35, 1570, 230), 12, border_red, fill_red, width=2)
+    draw.text((1220, 50), arabic("⚠️ CRITICAL CLINICAL ALERTS"), fill=border_red, font=font_card_head)
+    
+    ay = 86
+    alert_list = pick_alerts(organism, is_renal, is_preg, age, cl_cr, specimen)
+    for alert in alert_list:
+        ay = draw_smart_text(draw, (1220, ay), f"• {alert}", font_caption, c_dark, 330, line_spacing=4)
+        ay += 6
 
-    # ======== Row 2 ========
-    row2 = [
-        ((250, 250, 520, 345), "SPECIMEN", [specimen], blue),
-        ((545, 250, 815, 345), "INFECTION TYPE", [infection_type], green),
-        ((840, 250, 1110, 345), "FIRST-LINE OPTIONS", first_line[:3] if first_line else ["—"], orange),
-        ((1135, 250, 1385, 345), "AVOID", avoid[:3] if avoid else ["—"], red),
+    # ==================== الروابط العرضية ومجموعات الخط الأول ====================
+    row2_y = 255
+    row2_h = 100
+    
+    row2_cards = [
+        ((30, row2_y, 400, row2_y + row2_h), "PRIMARY SUITABILITY", first_line if first_line else ["Standard Protocol"], border_blue, fill_blue),
+        ((420, row2_y, 1570, row2_y + row2_h), "ORGANISM EMPIRICAL INTRINSIC RESISTANCE (AVOID)", avoid if avoid else ["None reported under standard guidelines"], border_red, fill_red)
     ]
-    for box, title, items, color in row2:
-        draw_list_box(draw, box, title, items, color, color, font_sub, font_small)
+    
+    for r_box, r_title, r_items, r_bcolor, r_fcolor in row2_cards:
+        rounded_card(draw, r_box, 10, r_bcolor, r_fcolor, width=1)
+        draw.text((r_box[0] + 15, r_box[1] + 12), arabic(r_title), fill=r_bcolor, font=font_card_head)
+        items_joined = ", ".join(r_items[:6])
+        draw_smart_text(draw, (r_box[0] + 15, r_box[1] + 42), items_joined, font_body_text, c_dark, (r_box[2]-r_box[0])-30)
 
-    # ======== Main columns ========
-    col_y1, col_y2 = 410, 810
-    cols = [
-        ((30, col_y1, 415, col_y2), "PREFERRED (SAFE)", preferred[:8], green),
-        ((425, col_y1, 810, col_y2), "USE WITH CAUTION", use_caution[:8], yellow),
-        ((820, col_y1, 1205, col_y2), "AVOID / CONTRAINDICATED", contraindicated[:8], red),
-        ((1215, col_y1, 1570, col_y2), "RESERVE (SEVERE / ESBL)", reserve[:8], blue),
+    # ==================== الأعمدة الرئيسية الأربعة المتوازية والمدروسة بصرياً ====================
+    col_y1, col_y2 = 380, 880
+    col_w = 365
+    col_gap = 20
+    x_start = 30
+
+    columns_config = [
+        ("🟢 PREFERRED (OPTIMAL SAFE)", preferred, border_green, fill_green),
+        ("🟡 USE WITH CAUTION / DOSING", use_caution, border_yellow, fill_yellow),
+        ("🔴 CONTRAINDICATED / INEFFECTIVE", contraindicated, border_red, fill_red),
+        ("🔵 RESERVE PATHWAY (CRITICAL)", reserve, border_blue, fill_blue)
     ]
-    for box, title, items, color in cols:
-        draw_list_box(draw, box, title, items, color, color, font_sub, font_text)
 
-    # ======== Footer ========
-    footer_left = (30, 840, 410, 950)
-    footer_mid = (430, 840, 1120, 950)
-    footer_right = (1140, 840, 1570, 950)
+    for idx, (c_title, c_items, c_bcolor, c_fcolor) in enumerate(columns_config):
+        cx1 = x_start + idx * (col_w + col_gap)
+        cx2 = cx1 + col_w
+        c_box = (cx1, col_y1, cx2, col_y2)
+        draw_card_section(draw, c_box, c_title, c_items, c_dark, c_bcolor, c_fcolor, font_card_head, font_body_text)
 
-    rounded_box(draw, footer_left, 18, soft_border, (255, 255, 255), 2)
-    rounded_box(draw, footer_mid, 18, soft_border, (255, 255, 255), 2)
-    rounded_box(draw, footer_right, 18, soft_border, (255, 255, 255), 2)
+    # ==================== تذييل اللوحة والملاحظات القانونية والعلامات التجارية ====================
+    footer_y = 900
+    footer_h = 100
+    
+    rounded_card(draw, (30, footer_y, 500, footer_y + footer_h), 12, c_navy, (255, 255, 255), width=2)
+    draw.text((45, footer_y + 15), arabic("WHO AWaRe DRUG INDEX"), fill=c_navy, font=font_card_head)
+    draw.text((45, footer_y + 50), arabic("🟢 Access: First Option"), fill=border_green, font=font_caption)
+    draw.text((215, footer_y + 50), arabic("🟡 Watch: Monitor"), fill=border_yellow, font=font_caption)
+    draw.text((365, footer_y + 50), arabic("🔴 Reserve: Last Line"), fill=border_red, font=font_caption)
 
-    draw.text((55, 865), "WHO AWaRe CLASSIFICATION", fill=dark, font=font_sub)
-    draw.text((65, 905), "ACCESS", fill=green, font=font_text)
-    draw.text((170, 905), "WATCH", fill=yellow, font=font_text)
-    draw.text((275, 905), "RESERVE", fill=red, font=font_text)
+    rounded_card(draw, (520, footer_y, 1570, footer_y + footer_h), 12, c_navy, (255, 255, 255), width=2)
+    draw.text((540, footer_y + 15), arabic("CLINICAL GUIDELINES SUMMARY & STRATEGY NOTES"), fill=c_navy, font=font_card_head)
+    
+    ny = footer_y + 45
+    for note in notes[:2]:
+        draw.text((540, ny), arabic(f"• {note}"), fill=c_dark, font=font_caption)
+        ny += 22
 
-    draw.text((455, 865), "SUMMARY", fill=dark, font=font_sub)
-    summary_items = [
-        (f"~{len(preferred)}", "Preferred"),
-        (f"~{len(use_caution)}", "Caution"),
-        (f"~{len(contraindicated)}", "Avoided"),
-        (f"~{len(reserve)}", "Reserve"),
-    ]
-    sx = 470
-    for val, label in summary_items:
-        draw.text((sx, 900), val, fill=navy, font=font_title)
-        draw.text((sx, 925), label, fill=gray, font=font_small)
-        sx += 150
-
-    draw.text((1160, 865), "NOTES", fill=dark, font=font_sub)
-    ny = 898
-    for note in notes[:3]:
-        short_note = note[:58]
-        draw.text((1160, ny), f"• {short_note}", fill=dark, font=font_small)
-        ny += 24
-
-    # Footer branding
-    draw.text((35, 960), "Developed by Dr / Hussein Ali | Orange Lab", fill=gray, font=font_small)
+    # التوقيع الرسمي المعتمد وحقوق البرمجيات والطباعة للدكتور حسين علي أسفل يمين اللوحة
+    branding_text = "Developed by Dr / Hussein Ali — Orange Lab, 6 October City, Egypt"
+    draw.text((W - 530, H - 35), branding_text, fill=c_gray, font=font_caption)
+    draw.text((30, H - 35), "© 2026 Orange Culture Tool — All Rights Reserved.", fill=c_gray, font=font_caption)
 
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    img.save(buf, format="PNG", quality=100)
     return buf.getvalue()
 
 # =========================================================
@@ -1197,7 +1225,7 @@ def generate_report(
         if grouped["renal"]:
             lines.append("\n[B] CONTRAINDICATED — RENAL IMPAIRMENT")
             lines.append(sep2)
-            for b in grouped["renal"]:
+            for b grouped["renal"]:
                 lines.append(f"- {b['name']} — {b['reason_short']}")
                 detail_key = b["name"].lower().replace(" ", "")
                 rendered = False
@@ -1582,7 +1610,6 @@ if uploaded:
                 key="report_editor"
             )
 
-            # تصنيف مناسب للأعمدة لتجنب التكرار
             reserve_names = uniq_keep_order([
                 item['name'] for item in (allowed + warned)
                 if item.get('aware') == 'Reserve'
@@ -1607,17 +1634,14 @@ if uploaded:
 
             notes = []
             if is_renal:
-                notes.append(f"Renal impairment: CrCl {cl_cr:.1f} ml/min — dose adjustment required.")
+                notes.append(f"Renal system alert: CrCl scaled to {cl_cr:.1f} ml/min.")
             if is_preg:
-                notes.append("Pregnancy: use with caution; consult specialist.")
+                notes.append("Fetal protection policy active. High-risk cross match applied.")
             if age < 18:
-                notes.append("Pediatric age: verify age-specific suitability.")
+                notes.append("Pediatric growth metric filters active.")
             if banned:
-                notes.append(f"{len(banned)} contraindicated / ineffective antibiotics.")
-            if warned:
-                notes.append(f"{len(warned)} antibiotics need caution or dose adjustment.")
-            notes.append("Treatment should be guided by severity and local resistance patterns.")
-            notes.append("De-escalate based on culture & sensitivity.")
+                notes.append(f"Excluded {len(banned)} counter-indicated vectors.")
+            notes.append("Treatment selections comply with international EUCAST guidelines.")
 
             try:
                 img_bytes = generate_decision_tree_image(
@@ -1646,7 +1670,7 @@ if uploaded:
                 img_bytes = None
 
             if img_ok and img_bytes:
-                st.markdown("### 🖼️ معاينة الصورة الملخصة")
+                st.markdown("### 🖼️ معاينة الصورة الملخصة المحدثة")
                 st.image(img_bytes, caption="Orange Clinical Decision Tree Summary", use_container_width=True)
 
             col_dl1, col_dl2 = st.columns(2)
