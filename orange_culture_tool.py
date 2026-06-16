@@ -158,6 +158,7 @@ def init_session_state() -> None:
         "logout_reason": "",
         "ocr_data": None,
         "last_file_hash": "",
+        "sir_map_edited": {},      # ← تعديل ١: تخزين SIR القابل للتعديل
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -749,7 +750,8 @@ def generate_report(
     lines.append(sep)
     if allowed:
         for item in allowed:
-            sir_tag = f" [Culture: {sir_map.get(item['name'], '?')}]" if sir_map else ""
+            # ← تعديل ٣: لا علامة ? — فقط اعرض لو موجود في sir_map
+            sir_tag = f" [Culture: {sir_map[item['name']]}]" if sir_map and item['name'] in sir_map else ""
             preg_tag = " [Pregnancy: caution]" if (is_preg and item.get("preg_status") == "Warn") else ""
             lines.append(f"\n{item['name']}{sir_tag}{preg_tag}")
             lines.append(sep2)
@@ -777,7 +779,8 @@ def generate_report(
         lines.append(sep)
         lines.append(f"Patient CrCl = {cl_cr:.1f} ml/min\n")
         for item in warned:
-            sir_tag = f" [Culture: {sir_map.get(item['name'], '?')}]" if sir_map else ""
+            # ← تعديل ٣: لا علامة ? في التقرير
+            sir_tag = f" [Culture: {sir_map[item['name']]}]" if sir_map and item['name'] in sir_map else ""
             lines.append(f"{item['name']}{sir_tag}")
             lines.append(sep2)
             lines.append(f"WHO AWaRe : {item.get('aware', '-')}")
@@ -916,6 +919,8 @@ if uploaded:
                 payload = extract_all_data_cached(file_bytes)
                 st.session_state.ocr_data = payload
                 st.session_state.last_file_hash = file_hash
+                # ← تعديل ١: عند تحميل صورة جديدة أعد تهيئة sir_map_edited
+                st.session_state.sir_map_edited = dict(payload["sir_map"])
             except Exception as e:
                 st.error(f"تعذر تحليل الصورة: {e}")
                 st.stop()
@@ -923,8 +928,11 @@ if uploaded:
     payload = st.session_state.ocr_data
     patient = payload["patient"]
     drugs_from_ocr = payload["drugs"]
-    sir_map = payload["sir_map"]
     raw_text = payload["raw_text"]
+
+    # ← تعديل ١: استخدم sir_map_edited كمصدر رئيسي
+    if not st.session_state.sir_map_edited and payload["sir_map"]:
+        st.session_state.sir_map_edited = dict(payload["sir_map"])
 
     st.image(file_bytes, caption="Preview", use_container_width=True)
 
@@ -1020,11 +1028,43 @@ if uploaded:
     with col2:
         st.subheader("💊 Antibiotic Analysis")
 
-        if sir_map:
-            st.info("📊 S / I / R detected: " + " | ".join(
-                f"{drug}: **{result}**" for drug, result in sorted(sir_map.items())
-            ))
+        # =========================================================
+        # تعديل ٢: واجهة تعديل SIR قابلة للتحرير بالكامل
+        # =========================================================
+        ocr_sir_map = payload["sir_map"]
 
+        if ocr_sir_map:
+            st.markdown("**📊 نتائج المزرعة — S / I / R** *(يمكن تعديل أي قيمة)*")
+            st.caption("راجع النتائج المستخرجة وعدّل أي خطأ قبل التحليل")
+
+            sir_options = ["S", "I", "R"]
+            edited_sir: Dict[str, str] = {}
+            drug_list = sorted(ocr_sir_map.keys())
+            cols_per_row = 3
+
+            for i in range(0, len(drug_list), cols_per_row):
+                row_drugs = drug_list[i : i + cols_per_row]
+                row_cols = st.columns(cols_per_row)
+                for col, drug in zip(row_cols, row_drugs):
+                    # القيمة الحالية: من session_state أو من OCR
+                    current_val = st.session_state.sir_map_edited.get(drug, ocr_sir_map[drug])
+                    if current_val not in sir_options:
+                        current_val = "S"
+                    new_val = col.selectbox(
+                        label=drug,
+                        options=sir_options,
+                        index=sir_options.index(current_val),
+                        key=f"sir_{drug}_{file_hash[:8]}",
+                    )
+                    edited_sir[drug] = new_val
+
+            # احفظ التعديلات في session_state
+            st.session_state.sir_map_edited = edited_sir
+
+        # sir_map المستخدم في كل التحليل = النسخة المعدلة
+        sir_map = dict(st.session_state.sir_map_edited)
+
+        # =========================================================
         final_drugs = st.multiselect(
             "✅ Confirm / Edit Antibiotics",
             options=sorted(ABX_GUIDELINES.keys()),
@@ -1079,7 +1119,8 @@ if uploaded:
         if warned:
             with st.expander("🟡 Warnings / Dose Adjustment Required", expanded=True):
                 for item in warned:
-                    sir_tag = f" [{sir_map.get(item['name'], '')}]" if sir_map else ""
+                    # ← تعديل ٣: لا علامة ? في الـ warnings
+                    sir_tag = f" [{sir_map[item['name']]}]" if sir_map and item['name'] in sir_map else ""
                     if item.get("warning_reason") == "intermediate_culture":
                         st.warning(f"**{item['name']}{sir_tag}** — Intermediate (I) on culture, use only after clinical review.")
                     else:
@@ -1088,9 +1129,10 @@ if uploaded:
         if allowed:
             st.success(f"🟢 {len(allowed)} Recommended Option(s)")
             for item in allowed:
-                sir_badge = f" [{sir_map.get(item['name'], '?')}]" if sir_map else ""
+                # ← تعديل ٣: لا علامة ? — فقط اعرض لو الدواء موجود في sir_map
+                sir_badge = f" [{sir_map[item['name']]}]" if sir_map and item['name'] in sir_map else ""
                 preg_flag = " 🤰" if (is_preg and item.get("preg_status") == "Warn") else ""
-                
+
                 aware_val = item.get('aware', 'Unknown')
                 color_val = AWARE_COLORS.get(aware_val, aware_val)
 
