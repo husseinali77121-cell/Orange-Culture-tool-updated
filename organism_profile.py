@@ -227,7 +227,7 @@ ORGANISM_PROFILE = {
         "first_line": ["Levofloxacin","Azithromycin"],
         "second_line": ["Doxycycline","Clarithromycin"],
         "third_line":  [],
-        "avoid": ["Beta-lactams (alone)","Aminoglycosides","Cephalosporins)"],
+               "avoid": ["Beta-lactams (alone)","Aminoglycosides","Cephalosporins"],
         "urine_note": "",
         "specimen_context": {
             "Sputum": "🔬 Legionella — CAP الشديد، خاصةً في الفنادق أو مكيفات الهواء.",
@@ -276,18 +276,19 @@ ORGANISM_PROFILE = {
 }
 # Additional clinically relevant profiles referenced by the antibiotic module.
 ORGANISM_PROFILE.update({
-    "VRE": {
-        "first_line": ["Linezolid", "Vancomycin"],
+       "VRE": {
+        "first_line": ["Linezolid"],
         "second_line": [],
         "third_line": [],
         "avoid": [
+            "Vancomycin",
             "Cephalosporins (كل الجيل)",
             "Carbapenems",
             "Ertapenem",
             "Amoxicillin + Clavulanic acid",
             "Ampicillin/Sulbactam",
         ],
-        "urine_note": "Vancomycin-resistant Enterococcus يحتاج مراجعة الحساسية المحلية؛ Linezolid خيار مهم في العدوى الجهازية.",
+        "urine_note": "VRE = Vancomycin-resistant Enterococcus؛ لذلك لا يُستخدم Vancomycin. راجع الحساسية المحلية، وLinezolid خيار مهم في العدوى الجهازية.",
         "specimen_context": {
             "Blood": "🔴 VRE bacteremia — يحتاج علاج موجّه ومتابعة متخصصة.",
             "Urine": "⚠️ VRE قد يظهر في UTI المعقد أو المرضى المنومين لفترات طويلة.",
@@ -295,6 +296,7 @@ ORGANISM_PROFILE.update({
         },
         "note": "🔴 VRE يعني مقاومة للفانكومايسين؛ يجب الاعتماد على علاج موجّه ونتيجة الحساسية.",
     },
+
     "Rickettsia spp.": {
         "first_line": ["Doxycycline"],
         "second_line": [],
