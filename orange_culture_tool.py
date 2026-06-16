@@ -9,6 +9,7 @@ import hashlib
 from datetime import datetime
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
+import io
 
 import streamlit as st
 
@@ -24,6 +25,24 @@ except Exception as exc:
     pytesseract = None
     OCR_AVAILABLE = False
     OCR_IMPORT_ERROR = str(exc)
+
+# Pillow لإنشاء الصورة الملخصة
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    Image = ImageDraw = ImageFont = None
+
+# مكتبات دعم اللغة العربية في الصورة (اختيارية)
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+    ARABIC_SUPPORT = True
+except ImportError:
+    arabic_reshaper = None
+    get_display = None
+    ARABIC_SUPPORT = False
 
 from abx_guidelines import (
     ABX_ALIAS_INDEX,
@@ -158,7 +177,8 @@ def init_session_state() -> None:
         "logout_reason": "",
         "ocr_data": None,
         "last_file_hash": "",
-        "sir_map_edited": {},      # ← تعديل ١: تخزين SIR القابل للتعديل
+        "sir_map_edited": {},
+        "edited_report": "",   # <<NEW: لتخزين التقرير القابل للتعديل
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -674,9 +694,162 @@ def analyze_antibiotics(
     return allowed, warned, banned, preg_warn_items, sorted(set(interactions_alerts))
 
 # =========================================================
-# التقرير النصي
+# دالة توليد الصورة الملخصة (NEW)
+# =========================================================
+def get_arabic_font(size=14):
+    paths = ["NotoSansArabic-Regular.ttf", "Amiri-Regular.ttf", "Cairo-Regular.ttf", "ScheherazadeNew-Regular.ttf"]
+    for fp in paths:
+        try:
+            return ImageFont.truetype(fp, size)
+        except:
+            continue
+    try:
+        return ImageFont.truetype("DejaVuSans.ttf", size)
+    except:
+        return ImageFont.load_default()
+
+def arabic(text):
+    if not ARABIC_SUPPORT or not text:
+        return text
+    return get_display(arabic_reshaper.reshape(text))
+
+def draw_multiline_text(draw, xy, text, font, fill, max_width, line_spacing=4, align="left"):
+    x, y = xy
+    words = text.split()
+    lines = []
+    current = ""
+    for w in words:
+        test = current + w + " "
+        if draw.textbbox((0,0), test, font=font)[2] <= max_width:
+            current = test
+        else:
+            lines.append(current.strip())
+            current = w + " "
+    if current:
+        lines.append(current.strip())
+    for line in lines:
+        w = draw.textbbox((0,0), line, font=font)[2]
+        if align == "right":
+            draw.text((x + max_width - w, y), line, fill=fill, font=font)
+        else:
+            draw.text((x, y), line, fill=fill, font=font)
+        y += font.getsize(line)[1] + line_spacing
+    return y
+
+def generate_summary_image(
+    patient_name, age, sex, weight, cl_cr, is_renal, is_preg,
+    organism, specimen, infection_type,
+    first_line, avoid, preferred, use_caution, contraindicated, reserve, notes
+) -> bytes:
+    if not PIL_AVAILABLE:
+        raise RuntimeError("مكتبة Pillow غير مثبتة. لا يمكن إنشاء الصورة.")
+
+    W = 900
+    bg_color = (30, 30, 30)
+    orange = (255, 140, 0)
+    white = (255, 255, 255)
+    green = (39, 174, 96)
+    yellow = (241, 196, 15)
+    red = (231, 76, 60)
+    purple = (142, 68, 173)
+    gray = (150, 150, 150)
+
+    font_title = get_arabic_font(22)
+    font_sub = get_arabic_font(16)
+    font_norm = get_arabic_font(14)
+    font_small = get_arabic_font(12)
+
+    img = Image.new("RGB", (W, 1800), bg_color)
+    draw = ImageDraw.Draw(img)
+    y = 20
+    mx = 25
+    box_w = W - 2 * mx
+
+    # شريط علوي برتقالي
+    draw.rectangle([(0,0), (W, 50)], fill=orange)
+    draw.text((mx, 8), arabic("ORANGE LAB — Antibiotic Decision Support"), fill=white, font=font_title)
+    y = 65
+
+    # اسم المريض والتاريخ
+    draw.text((mx, y), arabic(f"Patient: {patient_name}"), fill=white, font=font_sub)
+    draw.text((W - mx - 200, y), datetime.now().strftime("%Y-%m-%d %H:%M"), fill=gray, font=font_norm)
+    y += 30
+
+    # تفاصيل سريعة
+    details = f"Age: {age}  |  Sex: {sex}  |  Weight: {weight} kg  |  Renal: {'Impaired' if is_renal else 'Normal'}  |  Pregnant: {'Yes' if is_preg else 'No'}"
+    draw.text((mx, y), details, fill=gray, font=font_small)
+    y += 25
+    draw.text((mx, y), arabic(f"Organism: {organism}   |   Specimen: {specimen}   |   Infection: {infection_type}"), fill=white, font=font_sub)
+    y += 35
+
+    def draw_abx_box(name, aware, status, color, start_y):
+        box_h = 40
+        draw.rectangle([(mx, start_y), (mx + box_w, start_y + box_h)], fill=color)
+        draw.text((mx+15, start_y+8), arabic(name), fill=white, font=font_norm)
+        aware_text = f"AWaRe: {aware}"
+        tw = draw.textbbox((0,0), aware_text, font=font_norm)[2]
+        draw.text((W - mx - tw - 15, start_y+8), aware_text, fill=white, font=font_norm)
+        status_text = status
+        sw = draw.textbbox((0,0), status_text, font=font_small)[2]
+        draw.text((W - mx - sw - 15, start_y+24), status_text, fill=white, font=font_small)
+        return start_y + box_h + 5
+
+    def section_title(text, start_y):
+        draw.rectangle([(mx, start_y), (mx + box_w, start_y + 35)], fill=orange)
+        draw.text((mx+15, start_y+8), arabic(text), fill=white, font=font_sub)
+        return start_y + 45
+
+    # عرض الأقسام
+    if preferred:
+        y = section_title("✅ PREFERRED (SAFE)", y)
+        for drug in preferred:
+            aware = ABX_GUIDELINES.get(drug, {}).get("aware", "Unknown")
+            y = draw_abx_box(drug, aware, "Safe", green, y)
+        y += 10
+
+    if use_caution:
+        y = section_title("⚠️ USE WITH CAUTION", y)
+        for drug in use_caution:
+            aware = ABX_GUIDELINES.get(drug, {}).get("aware", "Unknown")
+            y = draw_abx_box(drug, aware, "Caution", yellow, y)
+        y += 10
+
+    if contraindicated:
+        y = section_title("🚫 CONTRAINDICATED", y)
+        for drug in contraindicated:
+            aware = ABX_GUIDELINES.get(drug, {}).get("aware", "Unknown")
+            y = draw_abx_box(drug, aware, "Contraindicated", red, y)
+        y += 10
+
+    if reserve:
+        y = section_title("🔴 RESERVE (Severe / ESBL)", y)
+        for drug in reserve:
+            aware = ABX_GUIDELINES.get(drug, {}).get("aware", "Unknown")
+            y = draw_abx_box(drug, aware, "Reserve", purple, y)
+        y += 10
+
+    if notes:
+        y = section_title("📝 NOTES", y)
+        for note in notes:
+            y = draw_multiline_text(draw, (mx+15, y), arabic(note), font_small, white, box_w-30, align="right")
+            y += 8
+        y += 10
+
+    # تذييل
+    draw.rectangle([(0, y), (W, y+40)], fill=orange)
+    draw.text((mx, y+8), arabic("Developed by Dr / Hussein Ali | Orange Lab"), fill=white, font=font_norm)
+    y += 50
+
+    final_img = img.crop((0, 0, W, y))
+    buf = io.BytesIO()
+    final_img.save(buf, format="PNG")
+    return buf.getvalue()
+
+# =========================================================
+# التقرير النصي (مُعدل ليحتوي اسم المريض)
 # =========================================================
 def generate_report(
+    patient_name: str,   # NEW
     age: int,
     sex: str,
     weight: float,
@@ -706,6 +879,7 @@ def generate_report(
 
     lines.append("\nPATIENT DETAILS")
     lines.append(sep2)
+    lines.append(f"Name     : {patient_name}")   # NEW
     lines.append(f"Age      : {age} years")
     lines.append(f"Gender   : {sex}")
     lines.append(f"Weight   : {weight} kg")
@@ -750,7 +924,6 @@ def generate_report(
     lines.append(sep)
     if allowed:
         for item in allowed:
-            # ← تعديل ٣: لا علامة ? — فقط اعرض لو موجود في sir_map
             sir_tag = f" [Culture: {sir_map[item['name']]}]" if sir_map and item['name'] in sir_map else ""
             preg_tag = " [Pregnancy: caution]" if (is_preg and item.get("preg_status") == "Warn") else ""
             lines.append(f"\n{item['name']}{sir_tag}{preg_tag}")
@@ -779,7 +952,6 @@ def generate_report(
         lines.append(sep)
         lines.append(f"Patient CrCl = {cl_cr:.1f} ml/min\n")
         for item in warned:
-            # ← تعديل ٣: لا علامة ? في التقرير
             sir_tag = f" [Culture: {sir_map[item['name']]}]" if sir_map and item['name'] in sir_map else ""
             lines.append(f"{item['name']}{sir_tag}")
             lines.append(sep2)
@@ -919,8 +1091,8 @@ if uploaded:
                 payload = extract_all_data_cached(file_bytes)
                 st.session_state.ocr_data = payload
                 st.session_state.last_file_hash = file_hash
-                # ← تعديل ١: عند تحميل صورة جديدة أعد تهيئة sir_map_edited
                 st.session_state.sir_map_edited = dict(payload["sir_map"])
+                st.session_state.edited_report = ""  # reset
             except Exception as e:
                 st.error(f"تعذر تحليل الصورة: {e}")
                 st.stop()
@@ -930,7 +1102,6 @@ if uploaded:
     drugs_from_ocr = payload["drugs"]
     raw_text = payload["raw_text"]
 
-    # ← تعديل ١: استخدم sir_map_edited كمصدر رئيسي
     if not st.session_state.sir_map_edited and payload["sir_map"]:
         st.session_state.sir_map_edited = dict(payload["sir_map"])
 
@@ -943,6 +1114,14 @@ if uploaded:
 
     with col1:
         st.subheader("👤 Patient & Culture")
+
+        # ----- NEW: إدخال اسم المريض -----
+        patient_name = st.text_input(
+            "👤 Patient Name (اسم المريض)",
+            value="",
+            placeholder="أدخل اسم المريض (مثال: أحمد محمد)",
+            help="سيظهر هذا الاسم في التقرير والصورة الملخصة."
+        )
 
         culture_type = st.selectbox(
             "🧫 Specimen",
@@ -1029,7 +1208,7 @@ if uploaded:
         st.subheader("💊 Antibiotic Analysis")
 
         # =========================================================
-        # تعديل ٢: واجهة تعديل SIR قابلة للتحرير بالكامل
+        # تعديل SIR
         # =========================================================
         ocr_sir_map = payload["sir_map"]
 
@@ -1046,7 +1225,6 @@ if uploaded:
                 row_drugs = drug_list[i : i + cols_per_row]
                 row_cols = st.columns(cols_per_row)
                 for col, drug in zip(row_cols, row_drugs):
-                    # القيمة الحالية: من session_state أو من OCR
                     current_val = st.session_state.sir_map_edited.get(drug, ocr_sir_map[drug])
                     if current_val not in sir_options:
                         current_val = "S"
@@ -1058,10 +1236,8 @@ if uploaded:
                     )
                     edited_sir[drug] = new_val
 
-            # احفظ التعديلات في session_state
             st.session_state.sir_map_edited = edited_sir
 
-        # sir_map المستخدم في كل التحليل = النسخة المعدلة
         sir_map = dict(st.session_state.sir_map_edited)
 
         # =========================================================
@@ -1119,7 +1295,6 @@ if uploaded:
         if warned:
             with st.expander("🟡 Warnings / Dose Adjustment Required", expanded=True):
                 for item in warned:
-                    # ← تعديل ٣: لا علامة ? في الـ warnings
                     sir_tag = f" [{sir_map[item['name']]}]" if sir_map and item['name'] in sir_map else ""
                     if item.get("warning_reason") == "intermediate_culture":
                         st.warning(f"**{item['name']}{sir_tag}** — Intermediate (I) on culture, use only after clinical review.")
@@ -1129,7 +1304,6 @@ if uploaded:
         if allowed:
             st.success(f"🟢 {len(allowed)} Recommended Option(s)")
             for item in allowed:
-                # ← تعديل ٣: لا علامة ? — فقط اعرض لو الدواء موجود في sir_map
                 sir_badge = f" [{sir_map[item['name']]}]" if sir_map and item['name'] in sir_map else ""
                 preg_flag = " 🤰" if (is_preg and item.get("preg_status") == "Warn") else ""
 
@@ -1159,7 +1333,10 @@ if uploaded:
 
         if final_drugs:
             st.divider()
+
+            # ----- توليد التقرير النصي -----
             report_txt = generate_report(
+                patient_name=patient_name if patient_name.strip() else "غير محدد",
                 age=age,
                 sex=sex,
                 weight=weight,
@@ -1177,16 +1354,83 @@ if uploaded:
                 sir_map=sir_map,
             )
 
-            st.download_button(
-                "📄 Download Clinical Report",
-                data=report_txt,
-                file_name=f"Orange_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                mime="text/plain",
-                use_container_width=True,
+            # ----- مربع تحرير التقرير (قابل للتعديل) -----
+            edited_report = st.text_area(
+                "📋 التقرير السريري (يمكنك تعديل النص مباشرة لتصحيح أي خطأ)",
+                value=report_txt,
+                height=400,
+                key="report_editor"
             )
 
-            with st.expander("📋 Report Preview (copy-friendly)", expanded=False):
-                st.text_area("Clinical Report", report_txt, height=380, label_visibility="collapsed")
+            # ----- تجهيز بيانات الصورة الملخصة -----
+            preferred_names = [item['name'] for item in allowed]
+            warned_names = [item['name'] for item in warned]
+            banned_names = [item['name'] for item in banned]
+            reserve_names = list(dict.fromkeys(
+                [item['name'] for item in allowed + warned if item.get('aware') == 'Reserve']
+            ))
+
+            org_profile = ORGANISM_PROFILE.get(organism_type, {})
+            first_line_list = org_profile.get('first_line', [])
+            avoid_list = org_profile.get('avoid', [])
+            infection_type = "Uncomplicated UTI" if culture_type == "Urine" else f"{culture_type} infection"
+
+            notes = []
+            if is_renal:
+                notes.append(f"Renal impairment: CrCl {cl_cr:.1f} ml/min — dose adjustment required.")
+            if is_preg:
+                notes.append("Pregnancy: use with caution; consult specialist.")
+            if banned:
+                notes.append(f"{len(banned)} contraindicated antibiotics.")
+            if warned:
+                notes.append(f"{len(warned)} antibiotics require dose adjustment or caution.")
+            notes.append("Treatment should be guided by severity and local resistance patterns.")
+            notes.append("De-escalate based on culture & sensitivity.")
+
+            # ----- توليد الصورة -----
+            try:
+                img_bytes = generate_summary_image(
+                    patient_name=patient_name if patient_name.strip() else "غير محدد",
+                    age=age,
+                    sex=sex,
+                    weight=weight,
+                    cl_cr=cl_cr,
+                    is_renal=is_renal,
+                    is_preg=is_preg,
+                    organism=organism_type,
+                    specimen=culture_type,
+                    infection_type=infection_type,
+                    first_line=first_line_list,
+                    avoid=avoid_list,
+                    preferred=preferred_names,
+                    use_caution=warned_names,
+                    contraindicated=banned_names,
+                    reserve=reserve_names,
+                    notes=notes,
+                )
+                img_ok = True
+            except Exception as e:
+                st.error(f"فشل توليد الصورة: {e}")
+                img_ok = False
+
+            col_dl1, col_dl2 = st.columns(2)
+            with col_dl1:
+                st.download_button(
+                    "📄 تحميل التقرير (TXT) - بعد التعديل",
+                    data=edited_report,
+                    file_name=f"Orange_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                )
+            if img_ok:
+                with col_dl2:
+                    st.download_button(
+                        "🖼️ تحميل الصورة الملخصة (PNG)",
+                        data=img_bytes,
+                        file_name=f"Orange_Summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                        mime="image/png",
+                        use_container_width=True,
+                    )
 
 st.divider()
 st.markdown("""
