@@ -667,9 +667,10 @@ ABX_GUIDELINES = {
         "preg_status": "Safe", "preg_note": "",
         "child_safe": True, "interacts_with": [],
         "aliases": ["meronem","merrem"],
-        "organisms": ["Pseudomonas aeruginosa","Klebsiella spp.","E. coli",
-                      "Enterococcus faecalis","Staphylococcus aureus","MRSA",
+                "organisms": ["Pseudomonas aeruginosa","Klebsiella spp.","E. coli",
+                      "Enterococcus faecalis","Staphylococcus aureus",
                       "Acinetobacter baumannii"],
+
         "specimen_notes": {
             "Blood":  "🛑 sepsis شديد — MDR organisms — ICU.",
             "CSF":    "🛑 meningitis المعقد — MDR — أفضل من Imipenem للـ CNS.",
