@@ -178,7 +178,7 @@ def init_session_state() -> None:
         "ocr_data": None,
         "last_file_hash": "",
         "sir_map_edited": {},
-        "edited_report": "",   # <<NEW: لتخزين التقرير القابل للتعديل
+        "edited_report": "",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -694,8 +694,13 @@ def analyze_antibiotics(
     return allowed, warned, banned, preg_warn_items, sorted(set(interactions_alerts))
 
 # =========================================================
-# دالة توليد الصورة الملخصة (NEW)
+# دوال مساعدة للرسم (تم إصلاح getsize)
 # =========================================================
+def get_text_size(draw, text, font):
+    """إرجاع (width, height) باستخدام textbbox بطريقة آمنة."""
+    bbox = draw.textbbox((0, 0), text, font=font)
+    return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
 def get_arabic_font(size=14):
     paths = ["NotoSansArabic-Regular.ttf", "Amiri-Regular.ttf", "Cairo-Regular.ttf", "ScheherazadeNew-Regular.ttf"]
     for fp in paths:
@@ -728,12 +733,12 @@ def draw_multiline_text(draw, xy, text, font, fill, max_width, line_spacing=4, a
     if current:
         lines.append(current.strip())
     for line in lines:
-        w = draw.textbbox((0,0), line, font=font)[2]
+        w, h = get_text_size(draw, line, font)
         if align == "right":
             draw.text((x + max_width - w, y), line, fill=fill, font=font)
         else:
             draw.text((x, y), line, fill=fill, font=font)
-        y += font.getsize(line)[1] + line_spacing
+        y += h + line_spacing
     return y
 
 def generate_summary_image(
@@ -772,7 +777,9 @@ def generate_summary_image(
 
     # اسم المريض والتاريخ
     draw.text((mx, y), arabic(f"Patient: {patient_name}"), fill=white, font=font_sub)
-    draw.text((W - mx - 200, y), datetime.now().strftime("%Y-%m-%d %H:%M"), fill=gray, font=font_norm)
+    date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    tw_date, _ = get_text_size(draw, date_str, font_norm)
+    draw.text((W - mx - tw_date, y), date_str, fill=gray, font=font_norm)
     y += 30
 
     # تفاصيل سريعة
@@ -787,11 +794,11 @@ def generate_summary_image(
         draw.rectangle([(mx, start_y), (mx + box_w, start_y + box_h)], fill=color)
         draw.text((mx+15, start_y+8), arabic(name), fill=white, font=font_norm)
         aware_text = f"AWaRe: {aware}"
-        tw = draw.textbbox((0,0), aware_text, font=font_norm)[2]
-        draw.text((W - mx - tw - 15, start_y+8), aware_text, fill=white, font=font_norm)
+        tw_aware, _ = get_text_size(draw, aware_text, font_norm)
+        draw.text((W - mx - tw_aware - 15, start_y+8), aware_text, fill=white, font=font_norm)
         status_text = status
-        sw = draw.textbbox((0,0), status_text, font=font_small)[2]
-        draw.text((W - mx - sw - 15, start_y+24), status_text, fill=white, font=font_small)
+        tw_status, _ = get_text_size(draw, status_text, font_small)
+        draw.text((W - mx - tw_status - 15, start_y+24), status_text, fill=white, font=font_small)
         return start_y + box_h + 5
 
     def section_title(text, start_y):
@@ -799,7 +806,6 @@ def generate_summary_image(
         draw.text((mx+15, start_y+8), arabic(text), fill=white, font=font_sub)
         return start_y + 45
 
-    # عرض الأقسام
     if preferred:
         y = section_title("✅ PREFERRED (SAFE)", y)
         for drug in preferred:
@@ -849,7 +855,7 @@ def generate_summary_image(
 # التقرير النصي (مُعدل ليحتوي اسم المريض)
 # =========================================================
 def generate_report(
-    patient_name: str,   # NEW
+    patient_name: str,
     age: int,
     sex: str,
     weight: float,
@@ -879,7 +885,7 @@ def generate_report(
 
     lines.append("\nPATIENT DETAILS")
     lines.append(sep2)
-    lines.append(f"Name     : {patient_name}")   # NEW
+    lines.append(f"Name     : {patient_name}")
     lines.append(f"Age      : {age} years")
     lines.append(f"Gender   : {sex}")
     lines.append(f"Weight   : {weight} kg")
@@ -1092,7 +1098,7 @@ if uploaded:
                 st.session_state.ocr_data = payload
                 st.session_state.last_file_hash = file_hash
                 st.session_state.sir_map_edited = dict(payload["sir_map"])
-                st.session_state.edited_report = ""  # reset
+                st.session_state.edited_report = ""
             except Exception as e:
                 st.error(f"تعذر تحليل الصورة: {e}")
                 st.stop()
@@ -1115,7 +1121,6 @@ if uploaded:
     with col1:
         st.subheader("👤 Patient & Culture")
 
-        # ----- NEW: إدخال اسم المريض -----
         patient_name = st.text_input(
             "👤 Patient Name (اسم المريض)",
             value="",
@@ -1207,9 +1212,6 @@ if uploaded:
     with col2:
         st.subheader("💊 Antibiotic Analysis")
 
-        # =========================================================
-        # تعديل SIR
-        # =========================================================
         ocr_sir_map = payload["sir_map"]
 
         if ocr_sir_map:
@@ -1240,7 +1242,6 @@ if uploaded:
 
         sir_map = dict(st.session_state.sir_map_edited)
 
-        # =========================================================
         final_drugs = st.multiselect(
             "✅ Confirm / Edit Antibiotics",
             options=sorted(ABX_GUIDELINES.keys()),
@@ -1334,7 +1335,6 @@ if uploaded:
         if final_drugs:
             st.divider()
 
-            # ----- توليد التقرير النصي -----
             report_txt = generate_report(
                 patient_name=patient_name if patient_name.strip() else "غير محدد",
                 age=age,
@@ -1354,7 +1354,6 @@ if uploaded:
                 sir_map=sir_map,
             )
 
-            # ----- مربع تحرير التقرير (قابل للتعديل) -----
             edited_report = st.text_area(
                 "📋 التقرير السريري (يمكنك تعديل النص مباشرة لتصحيح أي خطأ)",
                 value=report_txt,
@@ -1362,7 +1361,6 @@ if uploaded:
                 key="report_editor"
             )
 
-            # ----- تجهيز بيانات الصورة الملخصة -----
             preferred_names = [item['name'] for item in allowed]
             warned_names = [item['name'] for item in warned]
             banned_names = [item['name'] for item in banned]
@@ -1387,7 +1385,6 @@ if uploaded:
             notes.append("Treatment should be guided by severity and local resistance patterns.")
             notes.append("De-escalate based on culture & sensitivity.")
 
-            # ----- توليد الصورة -----
             try:
                 img_bytes = generate_summary_image(
                     patient_name=patient_name if patient_name.strip() else "غير محدد",
