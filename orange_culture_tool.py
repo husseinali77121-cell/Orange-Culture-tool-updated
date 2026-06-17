@@ -7,7 +7,7 @@ import json
 import re
 import time
 import hashlib
-from datetime import datetime, date  # أضفنا date
+from datetime import datetime, date
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -83,9 +83,9 @@ st.markdown("""
 # الثوابت
 # =========================================================
 SESSION_TIMEOUT = 30 * 60
-SIR_LABELS = {"S": "Sensitive", "I": "Intermediate", "R": "Resistant"}
-BACTERIA_TYPES = list(ORGANISM_PROFILE.keys())
-SPECIMEN_TYPES = list(SPECIMEN_ORDER or DEFAULT_SPECIMENS)
+SIR_LABELS      = {"S": "Sensitive", "I": "Intermediate", "R": "Resistant"}
+BACTERIA_TYPES  = list(ORGANISM_PROFILE.keys())
+SPECIMEN_TYPES  = list(SPECIMEN_ORDER or DEFAULT_SPECIMENS)
 
 AWARE_COLORS = {
     "Access":  "🟢 Access",
@@ -138,7 +138,7 @@ ORGANISM_AVOID_CLASS_MAP = {
 # =========================================================
 def load_subscribers() -> Dict[str, str]:
     try:
-        raw = st.secrets.get("subscribers_json") or st.secrets.get("subscribers", "{}")
+        raw  = st.secrets.get("subscribers_json") or st.secrets.get("subscribers", "{}")
         data = json.loads(raw) if isinstance(raw, str) else dict(raw)
         return {str(k).strip().lower(): str(v).strip() for k, v in data.items()}
     except Exception:
@@ -161,12 +161,11 @@ def init_session_state() -> None:
         "sir_map_edited":     {},
         "patient_name_ocr":   "",
         "patient_name_final": "",
-        "report_text":        "",
-        # إعدادات جديدة للتقرير
+        # ─── حقول المزرعة الجديدة ─────────────────────────────────────────
         "colony_count":       "≥ 10^5 CFU/mL",
         "date_in":            date.today(),
-        "pus_cells":          0,
-        "rbcs":               0,
+        "pus_cells_text":     "",
+        "rbcs_text":          "",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -214,7 +213,7 @@ def get_route_label(item: Dict[str, Any]) -> str:
     return "🟢 Oral preferred / PO-friendly" if item.get("high_po") else "💉 IV/IM only"
 
 def uniq_keep_order(items: List[str]) -> List[str]:
-    seen: set = set()
+    seen:   set       = set()
     result: List[str] = []
     for x in items:
         if x not in seen:
@@ -241,7 +240,7 @@ def get_startup_validation_issues() -> List[str]:
     issues.extend(validate_organism_profile(known_antibiotics=list(ABX_GUIDELINES.keys())))
     issues.extend(validate_specimen_organism_map(known_organisms=list(ORGANISM_PROFILE.keys())))
     deduped: List[str] = []
-    seen: set = set()
+    seen:    set        = set()
     for issue in issues:
         if issue not in seen:
             deduped.append(issue)
@@ -303,7 +302,7 @@ def detect_patient_name(text: str) -> Optional[str]:
             continue
         if re.search(r"[\u0600-\u06FF]", line):
             cleaned = clean_patient_name(line)
-            words = cleaned.split()
+            words   = cleaned.split()
             if 2 <= len(words) <= 4 and len(cleaned) <= 40:
                 return cleaned
     for line in text.splitlines():
@@ -312,7 +311,7 @@ def detect_patient_name(text: str) -> Optional[str]:
             continue
         if re.fullmatch(r"[A-Za-z ]{4,40}", line):
             cleaned = clean_patient_name(line)
-            words = cleaned.split()
+            words   = cleaned.split()
             if 2 <= len(words) <= 4:
                 return cleaned
     return None
@@ -327,7 +326,7 @@ def get_subscription_days_left(email: str) -> Optional[int]:
     expiry_str = SUBSCRIBERS[email]
     try:
         expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d").date()
-        today = datetime.now().date()
+        today       = datetime.now().date()
         return (expiry_date - today).days
     except Exception:
         return None
@@ -335,7 +334,6 @@ def get_subscription_days_left(email: str) -> Optional[int]:
 def show_login_page():
     if st.session_state.get("logout_reason"):
         st.warning(st.session_state.pop("logout_reason"))
-
     st.markdown("""
     <div style='text-align:center; padding: 3rem 0 1rem 0'>
         <span style='font-size:3rem'>🍊</span>
@@ -343,15 +341,11 @@ def show_login_page():
         <p style='color:gray; margin:0'>AI-Assisted Antibiotic Decision Support — Egyptian Market</p>
     </div>
     """, unsafe_allow_html=True)
-
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("#### 🔐 تسجيل الدخول")
-        email = st.text_input(
-            "📧 البريد الإلكتروني",
-            placeholder="example@hospital.com",
-            label_visibility="collapsed"
-        )
+        email    = st.text_input("📧 البريد الإلكتروني", placeholder="example@hospital.com",
+                                 label_visibility="collapsed")
         login_btn = st.button("دخول", use_container_width=True, type="primary")
         if login_btn:
             return email.strip().lower()
@@ -386,7 +380,7 @@ def check_subscription(email: str) -> bool:
     if days_left is None:
         st.error("خطأ في بيانات الاشتراك، تواصل مع الدعم")
         return False
-    st.session_state.email = email
+    st.session_state.email     = email
     st.session_state.days_left = days_left
     if days_left < 0:
         st.error(f"⏳ انتهى اشتراكك منذ {abs(days_left)} يوم")
@@ -427,20 +421,18 @@ def render_top_bar() -> None:
                     f"⚠️ اشتراك **{st.session_state.email}** سينتهي خلال **{days} يوم(أيام)** — يُرجى التجديد قريبًا."
                 )
             else:
-                st.info(
-                    f"✅ اشتراك **{st.session_state.email}** سارٍ — متبقي **{days}** يومًا."
-                )
+                st.info(f"✅ اشتراك **{st.session_state.email}** سارٍ — متبقي **{days}** يومًا.")
     with right:
         if st.button("تسجيل خروج", use_container_width=True):
             logout("تم تسجيل الخروج بنجاح.")
 
 # =========================================================
-# OCR ومعالجة الصور
+# OCR
 # =========================================================
 def preprocess_image(file_bytes: bytes) -> Tuple[Any, Any]:
     ensure_ocr_dependencies()
-    arr = np.frombuffer(file_bytes, np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    arr  = np.frombuffer(file_bytes, np.uint8)
+    img  = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
         raise ValueError("تعذر قراءة الصورة. تأكد أن الملف صورة سليمة.")
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -472,11 +464,7 @@ def run_ocr(thresh: Any) -> str:
     return max(outputs, key=lambda x: len(re.sub(r"\s+", "", x)))
 
 def detect_age(text: str) -> Optional[int]:
-    patterns = [
-        r"(\d+)\s*[Yy]ears?", r"Age[:\s]+(\d+)",
-        r"(\d+)\s*[Yy]\b", r"العمر[:\s]+(\d+)"
-    ]
-    for pattern in patterns:
+    for pattern in [r"(\d+)\s*[Yy]ears?", r"Age[:\s]+(\d+)", r"(\d+)\s*[Yy]\b", r"العمر[:\s]+(\d+)"]:
         match = re.search(pattern, text)
         if match:
             value = safe_int(match.group(1), -1)
@@ -506,7 +494,7 @@ def detect_organism(text_lower: str) -> Optional[str]:
     return max(counts, key=counts.get) if counts else None
 
 def classify_sir_from_line(line: str) -> Optional[str]:
-    ll = line.lower().strip()
+    ll   = line.lower().strip()
     tail = re.search(r"\b([sir])\b\s*$", ll)
     if tail:
         return tail.group(1).upper()
@@ -549,8 +537,8 @@ def extract_detected_drugs(full_text: str) -> List[str]:
 
 @st.cache_data(show_spinner=False)
 def extract_all_data_cached(file_bytes: bytes) -> Dict[str, Any]:
-    _, thresh = preprocess_image(file_bytes)
-    full_text = run_ocr(thresh)
+    _, thresh  = preprocess_image(file_bytes)
+    full_text  = run_ocr(thresh)
     text_lower = full_text.lower()
     sir_map: Dict[str, str] = {}
     for line in full_text.splitlines():
@@ -581,7 +569,7 @@ def extract_all_data_cached(file_bytes: bytes) -> Dict[str, Any]:
 # =========================================================
 def is_intrinsically_avoided(organism_type: str, drug_name: str, drug_info: Dict[str, Any]) -> bool:
     organism_avoid = (ORGANISM_PROFILE.get(organism_type) or {}).get("avoid", [])
-    d_low  = drug_name.lower()
+    d_low   = drug_name.lower()
     d_class = drug_info.get("class", "").lower()
     for avoid_item in organism_avoid:
         av_low = avoid_item.lower().strip()
@@ -609,18 +597,18 @@ def analyze_antibiotics(
     current_meds: List[str],
     sir_map: Dict[str, str],
 ) -> Tuple[List[Dict], List[Dict], List[Dict], List[Dict], List[str]]:
-    allowed: List[Dict] = []
-    warned:  List[Dict] = []
-    banned:  List[Dict] = []
-    preg_warn_items: List[Dict] = []
+    allowed:            List[Dict] = []
+    warned:             List[Dict] = []
+    banned:             List[Dict] = []
+    preg_warn_items:    List[Dict] = []
     interactions_alerts: List[str] = []
 
     for drug in final_drugs:
         if drug not in ABX_GUIDELINES:
             continue
-        info = ABX_GUIDELINES[drug]
-        d_low = drug.lower()
-        cls   = info.get("class", "").lower()
+        info           = ABX_GUIDELINES[drug]
+        d_low          = drug.lower()
+        cls            = info.get("class", "").lower()
         culture_result = sir_map.get(drug)
 
         if culture_result == "R":
@@ -644,7 +632,7 @@ def analyze_antibiotics(
             ))
             continue
 
-        if organism_type == "MRSA" and any(x in info.get("class","") for x in ["Penicillin","Cephalosporin"]):
+        if organism_type == "MRSA" and any(x in info.get("class", "") for x in ["Penicillin", "Cephalosporin"]):
             banned.append(build_banned_item(
                 drug, "organism", "بيتا-لاكتام — لا يعمل على MRSA.",
                 "MRSA يحمل mecA / PBP2a مما يجعل البيتا-لاكتام غير فعالة.",
@@ -699,13 +687,13 @@ def analyze_antibiotics(
 
         allowed.append({"name": drug, **info})
 
-    allowed = sorted(allowed, key=lambda x: x.get("priority", 999))
-    warned  = sorted(warned,  key=lambda x: x.get("priority", 999))
+    allowed         = sorted(allowed,         key=lambda x: x.get("priority", 999))
+    warned          = sorted(warned,          key=lambda x: x.get("priority", 999))
     preg_warn_items = sorted(preg_warn_items, key=lambda x: x.get("priority", 999))
     return allowed, warned, banned, preg_warn_items, sorted(set(interactions_alerts))
 
 # =========================================================
-# صورة Clinical Decision Tree — بنفس تصميم Orange Lab
+# أدوات رسم الصورة
 # =========================================================
 def _get_font(size: int = 14, bold: bool = False) -> Any:
     if not PIL_AVAILABLE:
@@ -726,19 +714,24 @@ def _draw_rbox(draw: Any, box: tuple, bg: tuple, bd: tuple,
                radius: int = 14, width: int = 3) -> None:
     draw.rounded_rectangle(box, radius=radius, fill=bg, outline=bd, width=width)
 
+def _tw(draw: Any, text: str, font: Any) -> float:
+    try:
+        return draw.textlength(text, font=font)
+    except Exception:
+        return len(text) * (font.size if hasattr(font, "size") else 8)
+
+def _fh(font: Any) -> int:
+    return font.size if hasattr(font, "size") else 14
+
 def _draw_text_wrap(draw: Any, x: float, y: float, text: str,
                     font: Any, fill: tuple, max_w: float,
                     line_gap: int = 5) -> float:
     words = text.split()
     lines: List[str] = []
-    cur = ""
+    cur   = ""
     for w in words:
         trial = (cur + " " + w).strip()
-        try:
-            tw = draw.textlength(trial, font=font)
-        except Exception:
-            tw = len(trial) * 8
-        if tw <= max_w:
+        if _tw(draw, trial, font) <= max_w:
             cur = trial
         else:
             if cur:
@@ -746,84 +739,74 @@ def _draw_text_wrap(draw: Any, x: float, y: float, text: str,
             cur = w
     if cur:
         lines.append(cur)
-
-    lh = (font.size if hasattr(font, "size") else 14) + line_gap
+    lh = _fh(font) + line_gap
     for line in lines:
         draw.text((x, y), line, fill=fill, font=font)
         y += lh
     return y
 
 def _draw_section_box(
-    draw: Any,
-    box: tuple,
-    title: str,
-    title_color: tuple,
-    subtitle: str,
-    items: List[str],
-    item_color: tuple,
-    bg: tuple,
-    bd: tuple,
-    font_title: Any,
-    font_sub: Any,
-    font_item: Any,
+    draw: Any, box: tuple,
+    title: str, title_color: tuple, subtitle: str,
+    items: List[str], item_color: tuple,
+    bg: tuple, bd: tuple,
+    font_title: Any, font_sub: Any, font_item: Any,
 ) -> None:
     x1, y1, x2, y2 = box
     _draw_rbox(draw, box, bg, bd, radius=16, width=3)
-
     draw.text((x1 + 14, y1 + 12), title, fill=title_color, font=font_title)
-    cy = y1 + 12 + (font_title.size if hasattr(font_title, "size") else 16) + 6
-
+    cy = y1 + 12 + _fh(font_title) + 6
     if subtitle:
         draw.text((x1 + 14, cy), subtitle, fill=(110, 115, 125), font=font_sub)
-        cy += (font_sub.size if hasattr(font_sub, "size") else 13) + 4
-
+        cy += _fh(font_sub) + 4
     draw.line([(x1 + 10, cy), (x2 - 10, cy)], fill=bd, width=1)
     cy += 8
-
-    item_h = (font_item.size if hasattr(font_item, "size") else 13) + 7
     for item in items:
-        if cy + item_h > y2 - 8:
+        if cy + _fh(font_item) + 7 > y2 - 8:
             draw.text((x1 + 14, cy), "...", fill=(150, 150, 150), font=font_item)
             break
-        cy = _draw_text_wrap(
-            draw, x1 + 14, cy, f"• {item}",
-            font_item, item_color, x2 - x1 - 26, line_gap=5
-        )
+        cy = _draw_text_wrap(draw, x1 + 14, cy, f"• {item}",
+                              font_item, item_color, x2 - x1 - 26, line_gap=5)
 
-
+# =========================================================
+# توليد صورة Decision Tree
+# النقطة ٤: الصورة تتحدث دائماً لأننا لا نستخدم cache
+# النقطة ٥: infection_type → Microscopic Exam
+# النقطة ٦: colony_count تحت اسم البكتيريا
+# النقطة ٧: date_in في specimen
+# النقطة ٨: مربع AVOID محذوف من Row2
+# =========================================================
 def generate_decision_tree_image(
-    patient_name: str,
-    age: int,
-    sex: str,
-    weight: float,
-    cl_cr: float,
-    is_renal: bool,
-    is_preg: bool,
-    organism: str,
-    specimen: str,
-    first_line: List[str],
-    avoid: List[str],  # will not be displayed now
-    preferred: List[str],
-    use_caution: List[str],
+    patient_name:    str,
+    age:             int,
+    sex:             str,
+    weight:          float,
+    cl_cr:           float,
+    is_renal:        bool,
+    is_preg:         bool,
+    organism:        str,
+    specimen:        str,
+    first_line:      List[str],
+    preferred:       List[str],
+    use_caution:     List[str],
     contraindicated: List[str],
-    reserve: List[str],
-    notes: List[str],
-    colony_count: str = "",
-    date_in: str = "",
-    pus_cells: int = 0,
-    rbcs: int = 0,
+    reserve:         List[str],
+    notes:           List[str],
+    colony_count:    str = "",
+    date_in:         str = "",
+    pus_cells:       str = "",
+    rbcs:            str = "",
 ) -> bytes:
     if not PIL_AVAILABLE:
         raise RuntimeError("Pillow غير متاح — أضف Pillow لـ requirements.txt")
 
-    # ── Dimensions & Palette ─────────────────────────────────────────────────
-    W, H   = 1264, 843
-    PAD    = 16
-    GAP    = 10
-    BG     = (248, 250, 252)
-    WHITE  = (255, 255, 255)
-    DARK   = (28,  32,  40)
-    GRAY   = (95, 100, 112)
+    W, H  = 1264, 843
+    PAD   = 16
+    GAP   = 10
+    BG    = (248, 250, 252)
+    WHITE = (255, 255, 255)
+    DARK  = (28,  32,  40)
+    GRAY  = (95, 100, 112)
 
     NAVY       = (4,   26,  63)
     PURPLE_BD  = (120, 75, 178);  PURPLE_BG  = (247, 243, 254)
@@ -833,11 +816,10 @@ def generate_decision_tree_image(
     BLUE_BD    = (35,  90, 172);  BLUE_BG    = (234, 244, 255);  BLUE_TXT   = (15,   55, 145)
     ALERT_BD   = (205,115,  50);  ALERT_BG   = (255, 248, 232);  ALERT_TXT  = (130,  60,   5)
     SPEC_BD    = (35,  90, 172);  SPEC_BG    = (234, 244, 255)
-    INF_BD     = (30, 130,  65);  INF_BG     = (234, 252, 238)  # used for Microscopic exam
+    MICRO_BD   = (30, 130,  65);  MICRO_BG   = (234, 252, 238)   # Microscopic Exam
     FL_BD      = (190,138,  28);  FL_BG      = (255, 250, 225)
     FOOT_BD    = (185,192,200);   FOOT_BG    = (247, 249, 251)
 
-    # ── Fonts ─────────────────────────────────────────────────────────────────
     F_HEADER  = _get_font(20, True)
     F_TITLE   = _get_font(15, True)
     F_SUBTITL = _get_font(12, True)
@@ -849,45 +831,33 @@ def generate_decision_tree_image(
     img  = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
 
-    # ── 1. HEADER ─────────────────────────────────────────────────────────────
+    # ── HEADER ────────────────────────────────────────────────────────────────
     _draw_rbox(draw, (PAD, 6, W - PAD, 62), NAVY, NAVY, radius=12, width=1)
     htxt = "🔬  ORANGE LAB – CLINICAL DECISION TREE"
-    try:
-        hw = draw.textlength(htxt, font=F_HEADER)
-    except Exception:
-        hw = len(htxt) * 11
+    hw   = _tw(draw, htxt, F_HEADER)
     draw.text(((W - hw) // 2, 16), htxt, fill=WHITE, font=F_HEADER)
 
-    # ── 2. CENTER CULTURE BOX ─────────────────────────────────────────────────
+    # ── CENTER CULTURE BOX ────────────────────────────────────────────────────
     CB_X1, CB_X2 = 368, 870
-    CB_Y1, CB_Y2 = 72, 192
+    CB_Y1, CB_Y2 = 72, 195
     _draw_rbox(draw, (CB_X1, CB_Y1, CB_X2, CB_Y2), WHITE, NAVY, radius=14, width=2)
+
     ctype_txt = "URINE CULTURE RESULT" if "urine" in specimen.lower() else f"{specimen.upper()} CULTURE RESULT"
-    try:
-        ctw = draw.textlength(ctype_txt, font=F_SUBTITL)
-    except Exception:
-        ctw = len(ctype_txt) * 8
-    draw.text(((CB_X1 + CB_X2 - ctw) // 2, CB_Y1 + 14), ctype_txt, fill=DARK, font=F_SUBTITL)
+    ctw = _tw(draw, ctype_txt, F_SUBTITL)
+    draw.text(((CB_X1 + CB_X2 - ctw) // 2, CB_Y1 + 12), ctype_txt, fill=DARK, font=F_SUBTITL)
 
-    # Organism name
-    try:
-        ow = draw.textlength(organism, font=F_ORG)
-    except Exception:
-        ow = len(organism) * 15
-    draw.text(((CB_X1 + CB_X2 - ow) // 2, CB_Y1 + 42), organism, fill=NAVY, font=F_ORG)
+    ow = _tw(draw, organism, F_ORG)
+    draw.text(((CB_X1 + CB_X2 - ow) // 2, CB_Y1 + 38), organism, fill=NAVY, font=F_ORG)
 
-    # Colony count below organism
+    # Colony count أسفل اسم البكتيريا مباشرة — النقطة ٦
     if colony_count:
-        cc_text = f"Colony Count: {colony_count}"
-        try:
-            cclw = draw.textlength(cc_text, font=F_TEXT)
-        except Exception:
-            cclw = len(cc_text) * 7
-        y_cc = CB_Y1 + 42 + (F_ORG.size if hasattr(F_ORG, "size") else 30) + 8
-        draw.text(((CB_X1 + CB_X2 - cclw) // 2, y_cc), cc_text, fill=DARK, font=F_TEXT)
+        cc_txt = f"Colony Count: {colony_count}"
+        cctw   = _tw(draw, cc_txt, F_TEXT)
+        draw.text(((CB_X1 + CB_X2 - cctw) // 2, CB_Y1 + 38 + _fh(F_ORG) + 6),
+                  cc_txt, fill=(80, 80, 120), font=F_TEXT)
 
-    # ── 3. PATIENT DETAILS (left) ─────────────────────────────────────────────
-    PB = (PAD, 72, 358, 192)
+    # ── PATIENT DETAILS (left) ────────────────────────────────────────────────
+    PB = (PAD, 72, 358, 195)
     _draw_rbox(draw, PB, PURPLE_BG, PURPLE_BD, radius=14, width=3)
     draw.text((PAD + 14, 84), "PATIENT DETAILS", fill=PURPLE_BD, font=F_TITLE)
     p_lines = []
@@ -903,14 +873,14 @@ def generate_decision_tree_image(
     if sex == "Female":
         p_lines.append(f"Pregnancy: {'Yes' if is_preg else 'No'}")
     if age < 18:
-        p_lines.append("Verify age-specific antibiotic suitability.")
+        p_lines.append("Verify age-specific suitability.")
     py = 106
     for ln in p_lines[:7]:
         draw.text((PAD + 14, py), f"• {ln}", fill=DARK, font=F_TEXT)
-        py += F_TEXT.size + 5 if hasattr(F_TEXT, "size") else 17
+        py += _fh(F_TEXT) + 5
 
-    # ── 4. ALERT (right) ─────────────────────────────────────────────────────
-    AB = (885, 72, W - PAD, 192)
+    # ── ALERT (right) ─────────────────────────────────────────────────────────
+    AB = (885, 72, W - PAD, 195)
     _draw_rbox(draw, AB, ALERT_BG, ALERT_BD, radius=14, width=3)
     draw.text((AB[0] + 14, 84), "⚠  IMPORTANT ALERT", fill=ALERT_TXT, font=F_TITLE)
     alerts: List[str] = []
@@ -929,31 +899,31 @@ def generate_decision_tree_image(
         alerts = ["Verify sensitivity results.", "Consult local resistance patterns."]
     ay = 106
     for al in alerts[:5]:
-        ay = _draw_text_wrap(draw, AB[0] + 14, ay, f"• {al}", F_TEXT, DARK, AB[2] - AB[0] - 28, line_gap=4)
+        ay = _draw_text_wrap(draw, AB[0] + 14, ay, f"• {al}",
+                             F_TEXT, DARK, AB[2] - AB[0] - 28, line_gap=4)
         ay += 2
 
-    # ── 5. ROW 2: 3 info boxes (بدون Avoid) ──────────────────────────────────
-    R2_Y1, R2_Y2 = 205, 300
-    r2w = (W - 2 * PAD - 2 * GAP) // 3   # 3 boxes now
+    # ── ROW 2: 3 boxes — Specimen | Microscopic Exam | First-Line ─────────────
+    # النقطة ٥: Infection Type → Microscopic Exam
+    # النقطة ٧: date_in في Specimen
+    # النقطة ٨: مربع AVOID محذوف
+    R2_Y1, R2_Y2 = 208, 308
+    r2w = (W - 2 * PAD - 2 * GAP) // 3
 
-    # Box 1: Specimen + Date In
     spec_items = [specimen]
     if date_in:
         spec_items.append(f"Date In: {date_in}")
 
-    # Box 2: Microscopic Examination
-    micro_items = [
-        f"Pus cells: {pus_cells}/HPF",
-        f"RBCs: {rbcs}/HPF",
-    ]
+    micro_items = []
+    micro_items.append(f"Pus Cells: {pus_cells if pus_cells else '—'} /HPF")
+    micro_items.append(f"RBCs:      {rbcs if rbcs else '—'} /HPF")
 
-    # Box 3: First-line options
     fl_items = first_line[:4] or ["—"]
 
     r2_data = [
-        ("SPECIMEN",          spec_items, SPEC_BD, SPEC_BG, "🧪"),
-        ("MICROSCOPIC EXAM",  micro_items, INF_BD,  INF_BG,  "🔬"),
-        ("FIRST-LINE OPTIONS", fl_items,   FL_BD,   FL_BG,   "📋"),
+        ("SPECIMEN",          spec_items,  SPEC_BD,  SPEC_BG,  "🧪"),
+        ("MICROSCOPIC EXAM",  micro_items, MICRO_BD, MICRO_BG, "🔬"),
+        ("FIRST-LINE OPTIONS", fl_items,   FL_BD,    FL_BG,    "📋"),
     ]
 
     for i, (title, items, bd, bg, icon) in enumerate(r2_data):
@@ -963,18 +933,19 @@ def generate_decision_tree_image(
         draw.text((bx1 + 12, R2_Y1 + 9), f"{icon} {title}", fill=bd, font=F_SUBTITL)
         iy = R2_Y1 + 32
         for it in items[:4]:
-            iy = _draw_text_wrap(draw, bx1 + 14, iy, f"• {it}", F_SMALL, DARK, bx2 - bx1 - 24, line_gap=4)
+            iy = _draw_text_wrap(draw, bx1 + 14, iy, f"• {it}",
+                                 F_SMALL, DARK, bx2 - bx1 - 24, line_gap=4)
 
-    # ── 6. FOUR MAIN COLUMNS ──────────────────────────────────────────────────
-    COL_Y1 = 312
+    # ── FOUR MAIN COLUMNS ─────────────────────────────────────────────────────
+    COL_Y1 = 320
     COL_Y2 = H - 115
     cw     = (W - 2 * PAD - 3 * GAP) // 4
 
     columns = [
-        ("✅ PREFERRED (SAFE)",    "Preferred oral options",   preferred,       GREEN_BD,  GREEN_BG,  GREEN_TXT),
-        ("⚠️  USE WITH CAUTION",  "Use with caution",          use_caution,     AMBER_BD,  AMBER_BG,  AMBER_TXT),
-        ("🚫 AVOID / CONTRAINDICT.", "Due to other factors",   contraindicated,  RED_BD,   RED_BG,    RED_TXT),
-        ("🛡️  RESERVE (SEVERE)",  "ESBL / Severe cases only", reserve,          BLUE_BD,  BLUE_BG,   BLUE_TXT),
+        ("✅ PREFERRED (SAFE)",      "Preferred oral options",   preferred,       GREEN_BD, GREEN_BG, GREEN_TXT),
+        ("⚠️  USE WITH CAUTION",    "Use with caution",          use_caution,     AMBER_BD, AMBER_BG, AMBER_TXT),
+        ("🚫 AVOID / CONTRAINDICT.", "Due to other factors",     contraindicated,  RED_BD,   RED_BG,   RED_TXT),
+        ("🛡️  RESERVE (SEVERE)",    "ESBL / Severe cases only", reserve,          BLUE_BD,  BLUE_BG,  BLUE_TXT),
     ]
 
     for i, (title, subtitle, items, bd, bg, tc) in enumerate(columns):
@@ -986,31 +957,27 @@ def generate_decision_tree_image(
             bg, bd, F_TITLE, F_SMALL, F_TEXT,
         )
 
-    # ── 7. FOOTER: 3 boxes ───────────────────────────────────────────────────
+    # ── FOOTER ────────────────────────────────────────────────────────────────
     FY1 = H - 107
     FY2 = H - 8
     fw  = (W - 2 * PAD - 2 * GAP) // 3
 
     # WHO AWaRe
-    fx1 = PAD;         fx2 = fx1 + fw
+    fx1 = PAD;  fx2 = fx1 + fw
     _draw_rbox(draw, (fx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
     draw.text((fx1 + 12, FY1 + 10), "WHO AWaRe CLASSIFICATION", fill=DARK, font=F_SUBTITL)
     wy = FY1 + 32
     for label, color in [("ACCESS", GREEN_TXT), ("WATCH", AMBER_TXT), ("RESERVE", RED_TXT)]:
         draw.text((fx1 + 12, wy), label, fill=color, font=F_TEXT)
-        try:
-            lw = draw.textlength(label, font=F_TEXT) + 16
-        except Exception:
-            lw = 70
-        fx1_offset = fx1 + 12
+        lw = _tw(draw, label, F_TEXT) + 16
         draw.rounded_rectangle(
-            (fx1_offset - 4, wy - 2, fx1_offset + lw, wy + (F_TEXT.size if hasattr(F_TEXT, "size") else 12) + 2),
+            (fx1 + 8, wy - 2, fx1 + 12 + lw, wy + _fh(F_TEXT) + 2),
             radius=5, outline=color, width=1
         )
-        wy += (F_TEXT.size if hasattr(F_TEXT, "size") else 12) + 6
+        wy += _fh(F_TEXT) + 6
     draw.text((fx1 + 12, FY2 - 16), "First/second | Caution | Last resort", fill=GRAY, font=F_SMALL)
 
-    # SUMMARY
+    # Summary
     fx1 = PAD + fw + GAP;  fx2 = fx1 + fw
     _draw_rbox(draw, (fx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
     draw.text((fx1 + 12, FY1 + 10), "📊  SUMMARY", fill=DARK, font=F_SUBTITL)
@@ -1026,18 +993,19 @@ def generate_decision_tree_image(
         draw.text((sx, FY1 + 32), num, fill=clr, font=F_SUMNUM)
         draw.text((sx, FY1 + 62), lbl, fill=GRAY, font=F_SMALL)
 
-    # NOTES
+    # Notes
     fx1 = PAD + 2 * (fw + GAP);  fx2 = W - PAD
     _draw_rbox(draw, (fx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
     draw.text((fx1 + 12, FY1 + 10), "📋  NOTES", fill=DARK, font=F_SUBTITL)
     ny = FY1 + 32
     for note in (notes or [])[:4]:
-        ny = _draw_text_wrap(draw, fx1 + 12, ny, f"• {note}", F_SMALL, DARK, fx2 - fx1 - 22, line_gap=4)
+        ny = _draw_text_wrap(draw, fx1 + 12, ny, f"• {note}",
+                             F_SMALL, DARK, fx2 - fx1 - 22, line_gap=4)
 
-    # Branding
     draw.text(
         (PAD, H - 6),
-        "Developed by Dr / Hussein Ali | Orange Lab  |  EUCAST 2026 | CLSI M100 2026 | IDSA AMR 2025 | Egypt National Guidelines",
+        "Developed by Dr / Hussein Ali | Orange Lab  |  "
+        "EUCAST 2026 | CLSI M100 2026 | IDSA AMR 2025 | Egypt National Guidelines",
         fill=GRAY, font=F_SMALL
     )
 
@@ -1049,129 +1017,135 @@ def generate_decision_tree_image(
 # التقرير النصي
 # =========================================================
 def generate_report(
-    patient_name: str,
-    age: int,
-    sex: str,
-    weight: float,
-    cl_cr: float,
-    is_renal: bool,
-    is_preg: bool,
-    is_hepatic: bool,
-    allowed: List[Dict],
-    warned: List[Dict],
-    banned: List[Dict],
+    patient_name:    str,
+    age:             int,
+    sex:             str,
+    weight:          float,
+    cl_cr:           float,
+    is_renal:        bool,
+    is_preg:         bool,
+    is_hepatic:      bool,
+    allowed:         List[Dict],
+    warned:          List[Dict],
+    banned:          List[Dict],
     preg_warn_items: List[Dict],
-    organism: str,
-    specimen: str,
-    interactions: List[str],
-    sir_map: Dict[str, str],
+    organism:        str,
+    specimen:        str,
+    interactions:    List[str],
+    sir_map:         Dict[str, str],
+    colony_count:    str = "",
+    date_in:         str = "",
+    pus_cells:       str = "",
+    rbcs:            str = "",
 ) -> str:
     now  = datetime.now().strftime("%Y-%m-%d %H:%M")
     sep  = "=" * 60
     sep2 = "-" * 60
-    lines: List[str] = []
+    L:   List[str] = []
 
-    lines += [sep, "ORANGE LAB — CLINICAL DECISION REPORT", sep,
-              f"Date     : {now}"]
+    L += [sep, "ORANGE LAB — CLINICAL DECISION REPORT", sep, f"Date     : {now}"]
     if patient_name:
-        lines.append(f"Patient  : {patient_name}")
-    lines.append(sep)
+        L.append(f"Patient  : {patient_name}")
+    L.append(sep)
 
-    lines += ["\nPATIENT DETAILS", sep2]
-    lines.append("Note     : راجع اسم المريض — قد يحتاج تصحيحًا يدويًا إذا جاء من OCR.")
-    lines += [
-        f"Age      : {age} years",
-        f"Gender   : {sex}",
-        f"Weight   : {weight} kg",
-        f"Renal    : {'IMPAIRED' if is_renal else 'Normal'}",
-    ]
+    L += ["\nPATIENT DETAILS", sep2,
+          f"Age      : {age} years",
+          f"Gender   : {sex}",
+          f"Weight   : {weight} kg",
+          f"Renal    : {'IMPAIRED' if is_renal else 'Normal'}"]
     if is_renal:
-        lines.append(f"CrCl     : {cl_cr:.1f} ml/min ({get_renal_severity(cl_cr)})")
-    lines.append(f"Hepatic  : {'IMPAIRED' if is_hepatic else 'Normal'}")
+        L.append(f"CrCl     : {cl_cr:.1f} ml/min ({get_renal_severity(cl_cr)})")
+    L.append(f"Hepatic  : {'IMPAIRED' if is_hepatic else 'Normal'}")
     if sex == "Female":
-        lines.append(f"Pregnant : {'Yes' if is_preg else 'No'}")
+        L.append(f"Pregnant : {'Yes' if is_preg else 'No'}")
 
-    lines += ["\nCULTURE", sep2,
-              f"Specimen : {specimen}",
-              f"Organism : {organism}"]
+    L += ["\nCULTURE & MICROSCOPY", sep2,
+          f"Specimen : {specimen}"]
+    if date_in:
+        L.append(f"Date In  : {date_in}")
+    L.append(f"Organism : {organism}")
+    if colony_count:
+        L.append(f"Colony   : {colony_count}")
+    if pus_cells:
+        L.append(f"Pus Cells: {pus_cells} /HPF")
+    if rbcs:
+        L.append(f"RBCs     : {rbcs} /HPF")
 
     if organism in ORGANISM_PROFILE:
         op = ORGANISM_PROFILE[organism]
         if op.get("note"):
-            lines.append(f"Note       : {op['note']}")
+            L.append(f"Note       : {op['note']}")
         spec_ctx = (op.get("specimen_context") or {}).get(specimen, "")
         if spec_ctx:
-            lines.append(f"Context    : {spec_ctx}")
+            L.append(f"Context    : {spec_ctx}")
         if op.get("first_line"):
-            lines.append(f"First-line : {', '.join(op['first_line'])}")
+            L.append(f"First-line : {', '.join(op['first_line'])}")
         if op.get("avoid"):
-            lines.append(f"Avoid      : {', '.join(op['avoid'])}")
+            L.append(f"Avoid      : {', '.join(op['avoid'])}")
 
     if sir_map:
-        lines += ["\nSENSITIVITY RESULTS", sep2]
+        L += ["\nSENSITIVITY RESULTS", sep2]
         for drug, result in sorted(sir_map.items()):
             label = {"S": "Sensitive", "R": "Resistant", "I": "Intermediate"}.get(result, result)
-            lines.append(f"{drug:<40} {label}")
+            L.append(f"{drug:<40} {label}")
 
     if interactions:
-        lines += ["\nINTERACTIONS / WARNINGS", sep2]
+        L += ["\nINTERACTIONS / WARNINGS", sep2]
         for item in sorted(set(interactions)):
-            lines.append(f"- {item}")
+            L.append(f"- {item}")
 
-    lines += ["\nRECOMMENDED ANTIBIOTICS", sep]
+    L += ["\nRECOMMENDED ANTIBIOTICS", sep]
     if allowed:
         for item in allowed:
             sir_tag  = f" [Culture: {sir_map[item['name']]}]" if sir_map and item['name'] in sir_map else ""
             preg_tag = " [Pregnancy: caution]" if (is_preg and item.get("preg_status") == "Warn") else ""
-            lines += [f"\n{item['name']}{sir_tag}{preg_tag}", sep2,
-                      f"WHO AWaRe : {item.get('aware','-')}",
-                      f"Class     : {item.get('class','-')}",
-                      f"Route     : {'Oral/PO-friendly' if item.get('high_po') else 'IV/IM only'}"]
+            L += [f"\n{item['name']}{sir_tag}{preg_tag}", sep2,
+                  f"WHO AWaRe : {item.get('aware','-')}",
+                  f"Class     : {item.get('class','-')}",
+                  f"Route     : {'Oral/PO-friendly' if item.get('high_po') else 'IV/IM only'}"]
             spec_note = (item.get("specimen_notes") or {}).get(specimen, "")
             if spec_note:
-                lines += [f"Note      : {item.get('note','')}", f"{specimen}   : {spec_note}"]
+                L += [f"Note      : {item.get('note','')}", f"{specimen}   : {spec_note}"]
             else:
-                lines.append(f"Note      : {item.get('note','')}")
+                L.append(f"Note      : {item.get('note','')}")
             if is_renal:
-                lines.append(f"Renal     : {item.get('renal_note','-')}")
+                L.append(f"Renal     : {item.get('renal_note','-')}")
             if is_preg and item.get("preg_status") == "Warn":
                 pn = (item.get("preg_note") or "").splitlines()
                 if pn:
-                    lines.append(f"Pregnancy : {pn[0]}")
+                    L.append(f"Pregnancy : {pn[0]}")
     else:
-        lines.append("No recommended options after applying all restrictions.")
+        L.append("No recommended options after applying all restrictions.")
 
     if warned:
-        lines += ["\nDOSE ADJUSTMENT / USE WITH CAUTION", sep]
+        L += ["\nDOSE ADJUSTMENT / USE WITH CAUTION", sep]
         if is_renal:
-            lines.append(f"Patient CrCl = {cl_cr:.1f} ml/min\n")
+            L.append(f"Patient CrCl = {cl_cr:.1f} ml/min\n")
         for item in warned:
             sir_tag = f" [Culture: {sir_map[item['name']]}]" if sir_map and item['name'] in sir_map else ""
-            lines += [f"{item['name']}{sir_tag}", sep2,
-                      f"WHO AWaRe : {item.get('aware','-')}"]
+            L += [f"{item['name']}{sir_tag}", sep2, f"WHO AWaRe : {item.get('aware','-')}"]
             if item.get("warning_reason") == "intermediate_culture":
-                lines.append("Reason    : Intermediate (I) on culture result")
+                L.append("Reason    : Intermediate (I) on culture result")
             else:
-                lines += [f"Renal note: {item.get('renal_note','-')}",
-                          f"Limit CrCl: <= {item.get('renal_limit','-')} ml/min"]
-            lines.append("")
+                L += [f"Renal note: {item.get('renal_note','-')}",
+                      f"Limit CrCl: <= {item.get('renal_limit','-')} ml/min"]
+            L.append("")
 
     if is_preg and preg_warn_items:
-        lines += ["\nPREGNANCY — USE WITH CAUTION", sep]
+        L += ["\nPREGNANCY — USE WITH CAUTION", sep]
         for item in preg_warn_items:
-            lines += [item['name'], sep2]
-            lines.extend((item.get("preg_note") or "").splitlines())
-            lines.append("")
+            L += [item['name'], sep2]
+            L.extend((item.get("preg_note") or "").splitlines())
+            L.append("")
 
     if banned:
-        lines += ["\nCONTRAINDICATED / INEFFECTIVE", sep]
+        L += ["\nCONTRAINDICATED / INEFFECTIVE", sep]
         grouped: Dict[str, list] = {
             "resistant": [], "renal": [], "pregnancy": [],
             "child": [], "organism": [], "other": [],
         }
         for item in banned:
             grouped.setdefault(item["category"], []).append(item)
-
         labels = [
             ("resistant", "[A] RESISTANT IN CULTURE"),
             ("renal",     "[B] CONTRAINDICATED — RENAL IMPAIRMENT"),
@@ -1182,36 +1156,31 @@ def generate_report(
         ]
         for cat, heading in labels:
             if grouped.get(cat):
-                lines += [f"\n{heading}", sep2]
+                L += [f"\n{heading}", sep2]
                 for b in grouped[cat]:
-                    lines.append(f"- {b['name']} — {b['reason_short']}")
+                    L.append(f"- {b['name']} — {b['reason_short']}")
                     if cat == "renal":
-                        dk = b["name"].lower().replace(" ", "")
+                        dk       = b["name"].lower().replace(" ", "")
                         rendered = False
                         for k, v in RENAL_BAN_REASONS.items():
                             if k in dk:
-                                lines.extend([f"  {ln}" for ln in v.splitlines()])
+                                L.extend([f"  {ln}" for ln in v.splitlines()])
                                 rendered = True
                                 break
                         if not rendered:
-                            lines.extend([f"  {ln}" for ln in (b.get("reason_detail") or "").splitlines()])
+                            L.extend([f"  {ln}" for ln in (b.get("reason_detail") or "").splitlines()])
                     else:
-                        lines.extend([f"  {ln}" for ln in (b.get("reason_detail") or "").splitlines()])
-                    lines.append("")
+                        L.extend([f"  {ln}" for ln in (b.get("reason_detail") or "").splitlines()])
+                    L.append("")
 
-    lines += [
-        "\nDISCLAIMER", sep,
-        "هذا التقرير أداة مساعدة للقرار الطبي وليس بديلاً عن التقييم السريري.",
-        "القرار النهائي للوصف العلاجي يعود للطبيب المعالج.",
-        sep,
-        "Guidelines: EUCAST 2026 | CLSI M100 2026 | IDSA AMR 2025 | Egypt National",
-        "Route info: BNF 2025 | FDA Labels | WHO AWaRe 2025",
-        "WHO AWaRe : Access | Watch | Reserve",
-        sep,
-        "Developed by Dr / Hussein Ali | Orange Lab",
-        sep,
-    ]
-    return "\n".join(lines)
+    L += ["\nDISCLAIMER", sep,
+          "هذا التقرير أداة مساعدة للقرار الطبي وليس بديلاً عن التقييم السريري.",
+          "القرار النهائي للوصف العلاجي يعود للطبيب المعالج.", sep,
+          "Guidelines: EUCAST 2026 | CLSI M100 2026 | IDSA AMR 2025 | Egypt National",
+          "Route info: BNF 2025 | FDA Labels | WHO AWaRe 2025",
+          "WHO AWaRe : Access | Watch | Reserve", sep,
+          "Developed by Dr / Hussein Ali | Orange Lab", sep]
+    return "\n".join(L)
 
 # =========================================================
 # واجهة التطبيق الرئيسية
@@ -1259,7 +1228,6 @@ if uploaded:
                 st.session_state.ocr_data           = payload
                 st.session_state.last_file_hash     = file_hash
                 st.session_state.sir_map_edited     = dict(payload["sir_map"])
-                st.session_state.report_text        = ""
                 st.session_state.patient_name_ocr   = payload["patient"].get("Name") or ""
                 st.session_state.patient_name_final = payload["patient"].get("Name") or ""
             except Exception as e:
@@ -1294,11 +1262,12 @@ if uploaded:
 
         nc1, nc2 = st.columns([5, 1])
         with nc1:
+            # النقطة ٢: الاسم يُقرأ مباشرة من الـ widget — أي تغيير ينعكس فوراً
             patient_name = st.text_input(
                 "👤 Patient Name (اسم المريض)",
                 value=st.session_state.get("patient_name_final", ""),
                 placeholder="أدخل أو صحّح اسم المريض",
-                help="يظهر في التقرير وصورة الملخص. صحّح إذا كان OCR أخطأ.",
+                help="يظهر فوراً في التقرير والصورة عند أي تغيير.",
                 key=f"pname_{file_hash[:8]}"
             )
         with nc2:
@@ -1306,6 +1275,7 @@ if uploaded:
             if st.button("↺ OCR", use_container_width=True, key=f"ocr_name_{file_hash[:8]}"):
                 st.session_state.patient_name_final = ocr_name
                 st.rerun()
+        # تحديث session_state فوراً بقيمة الـ widget الحالية
         st.session_state.patient_name_final = patient_name.strip()
 
         culture_type = st.selectbox(
@@ -1328,7 +1298,7 @@ if uploaded:
             help=f"بكتيريا شائعة في عينة {culture_type}",
         )
 
-        # --- إدخالات جديدة: Colony count, Date In, Microscopic exam ---
+        # ── حقول المزرعة والمجهر ──────────────────────────────────────────────
         st.divider()
         st.subheader("🔬 Culture & Microscopic Details")
 
@@ -1336,33 +1306,34 @@ if uploaded:
             "Colony Count (CFU/mL)",
             value=st.session_state.colony_count,
             placeholder="≥ 10^5 CFU/mL",
-            help="أدخل تعداد المستعمرات",
             key="colony_count_input"
         )
         st.session_state.colony_count = colony_count
 
         date_in = st.date_input(
-            "Date In (تاريخ استلام العينة)",
+            "📅 Date In (تاريخ استلام العينة)",
             value=st.session_state.date_in,
             key="date_in_input"
         )
         st.session_state.date_in = date_in
 
-        col_pus, col_rbc = st.columns(2)
-        with col_pus:
-            pus_cells = st.number_input(
-                "Pus Cells (/HPF)", min_value=0, max_value=100,
-                value=st.session_state.pus_cells, step=1,
+        c_pus, c_rbc = st.columns(2)
+        with c_pus:
+            pus_cells_text = st.text_input(
+                "Pus Cells (/HPF)",
+                value=st.session_state.pus_cells_text,
+                placeholder="مثال: 4 - 6",
                 key="pus_cells_input"
             )
-            st.session_state.pus_cells = pus_cells
-        with col_rbc:
-            rbcs = st.number_input(
-                "RBCs (/HPF)", min_value=0, max_value=100,
-                value=st.session_state.rbcs, step=1,
+            st.session_state.pus_cells_text = pus_cells_text
+        with c_rbc:
+            rbcs_text = st.text_input(
+                "RBC Cells (/HPF)",
+                value=st.session_state.rbcs_text,
+                placeholder="مثال: 2 - 4",
                 key="rbcs_input"
             )
-            st.session_state.rbcs = rbcs
+            st.session_state.rbcs_text = rbcs_text
 
         # Organism guidance
         if organism_type in ORGANISM_PROFILE:
@@ -1385,13 +1356,11 @@ if uploaded:
 
         st.divider()
 
-        age = st.number_input(
-            "Age (years)", min_value=0, max_value=120,
-            value=safe_int(patient.get("Age"), 25)
-        )
-        default_sex = patient.get("Sex") if patient.get("Sex") in ["Female","Male"] else "Male"
-        sex = st.selectbox("Gender", ["Female","Male"],
-                           index=0 if default_sex == "Female" else 1)
+        age = st.number_input("Age (years)", min_value=0, max_value=120,
+                               value=safe_int(patient.get("Age"), 25))
+        default_sex = patient.get("Sex") if patient.get("Sex") in ["Female", "Male"] else "Male"
+        sex    = st.selectbox("Gender", ["Female", "Male"],
+                              index=0 if default_sex == "Female" else 1)
         weight = st.number_input("Weight (kg)", min_value=5, max_value=300, value=70)
 
         st.divider()
@@ -1399,21 +1368,15 @@ if uploaded:
         is_renal = st.checkbox("🚩 Renal Impairment")
         cl_cr    = 100.0
         if is_renal:
-            s_cr = st.number_input(
-                "Serum Creatinine (mg/dL)",
-                min_value=0.1, max_value=20.0, value=1.0, step=0.1
-            )
-            cl_cr    = calc_creatinine_clearance(age, weight, s_cr, sex)
-            severity = get_renal_severity(cl_cr)
-            st.metric(
-                "CrCl (Cockcroft-Gault)", f"{cl_cr:.1f} ml/min",
-                delta=severity,
-                delta_color="normal" if cl_cr >= 60 else ("off" if cl_cr >= 30 else "inverse")
-            )
+            s_cr  = st.number_input("Serum Creatinine (mg/dL)",
+                                    min_value=0.1, max_value=20.0, value=1.0, step=0.1)
+            cl_cr = calc_creatinine_clearance(age, weight, s_cr, sex)
+            st.metric("CrCl (Cockcroft-Gault)", f"{cl_cr:.1f} ml/min",
+                      delta=get_renal_severity(cl_cr),
+                      delta_color="normal" if cl_cr >= 60 else ("off" if cl_cr >= 30 else "inverse"))
 
         is_hepatic = st.checkbox("🚩 Hepatic Impairment")
-
-        is_preg = False
+        is_preg    = False
         if sex == "Female" and 12 <= age <= 55:
             is_preg = st.checkbox("🤰 Patient is Pregnant")
 
@@ -1423,15 +1386,14 @@ if uploaded:
     with col2:
         st.subheader("💊 Antibiotic Analysis")
 
-        # ── تعديل SIR ──────────────────────────────────────────────────────
+        # SIR قابل للتعديل
         ocr_sir_map = payload["sir_map"]
         if ocr_sir_map:
             st.markdown("**📊 نتائج المزرعة — S / I / R** *(عدّل أي قيمة خطأ)*")
             st.caption("تعديلاتك تُطبَّق مباشرة على التحليل والتقرير والصورة")
-
-            sir_options  = ["S", "I", "R"]
+            sir_options = ["S", "I", "R"]
             edited_sir: Dict[str, str] = {}
-            drug_list    = sorted(ocr_sir_map.keys())
+            drug_list   = sorted(ocr_sir_map.keys())
             for i in range(0, len(drug_list), 3):
                 row_drugs = drug_list[i: i + 3]
                 row_cols  = st.columns(3)
@@ -1455,6 +1417,9 @@ if uploaded:
             default=[d for d in drugs_from_ocr if d in ABX_GUIDELINES]
         )
 
+        # ── تحليل المضادات ────────────────────────────────────────────────────
+        # النقطة ٤: analyze_antibiotics يُستدعى مباشرة بقيم اللحظة
+        # فأي تغيير في أي widget يُعيد تشغيل Streamlit → تحديث فوري
         allowed, warned, banned, preg_warn_items, interactions_alerts = analyze_antibiotics(
             final_drugs=final_drugs,
             organism_type=organism_type,
@@ -1510,9 +1475,7 @@ if uploaded:
                             "use only after clinical review."
                         )
                     else:
-                        st.warning(
-                            f"**{item['name']}{sir_tag}** — {item.get('renal_note','')}"
-                        )
+                        st.warning(f"**{item['name']}{sir_tag}** — {item.get('renal_note','')}")
 
         if allowed:
             st.success(f"🟢 {len(allowed)} Recommended Option(s)")
@@ -1523,8 +1486,7 @@ if uploaded:
                 aware_val = item.get("aware", "Unknown")
                 color_val = AWARE_COLORS.get(aware_val, aware_val)
                 with st.expander(
-                    f"{item['name']}{sir_badge}{preg_flag} — {color_val}",
-                    expanded=False
+                    f"{item['name']}{sir_badge}{preg_flag} — {color_val}", expanded=False
                 ):
                     c1, c2 = st.columns(2)
                     c1.write(f"**Class:** {item.get('class','-')}")
@@ -1555,19 +1517,15 @@ if uploaded:
                 item['name'] for item in allowed
                 if item.get("aware") != "Reserve"
             ]
-            warned_names = [
-                item['name'] for item in warned
-                if item['name'] not in reserve_names
-            ]
-            # ضم أدوية الحمل الحذرة إلى قائمة التحذير
+            # النقطة ٣: use_caution يشمل warned + preg_warn
             preg_caution_names = [item['name'] for item in preg_warn_items]
-            use_caution_names = uniq_keep_order(warned_names + preg_caution_names)
-
-            banned_names = uniq_keep_order([item['name'] for item in banned])
-
-            org_profile   = ORGANISM_PROFILE.get(organism_type, {})
-            first_line_l  = org_profile.get("first_line", [])
-            avoid_l       = org_profile.get("avoid", [])  # سيتم تجاهله في الصورة
+            use_caution_names  = uniq_keep_order(
+                [item['name'] for item in warned if item['name'] not in reserve_names]
+                + preg_caution_names
+            )
+            banned_names   = uniq_keep_order([item['name'] for item in banned])
+            org_profile    = ORGANISM_PROFILE.get(organism_type, {})
+            first_line_l   = org_profile.get("first_line", [])
 
             notes: List[str] = []
             if is_renal:
@@ -1583,12 +1541,13 @@ if uploaded:
             notes.append("Treatment guided by severity and local resistance patterns.")
             notes.append("De-escalate based on culture & sensitivity.")
 
-            # ── التقرير النصي (غير قابل للتعديل الآن) ───────────────────────
+            # ── النقطة ١: التقرير النصي — عرض للقراءة فقط، التعديل في الـ TXT ──
             st.markdown("### 📋 التقرير السريري")
-            st.caption("النص النهائي — حمل الملف للتعديل الخارجي")
+            st.caption("النص النهائي — حمّل الملف لتعديله خارجياً إن أردت")
 
+            # النقطة ٢: الاسم يُمرَّر مباشرة من قيمة الـ widget الحالية
             auto_report = generate_report(
-                patient_name=st.session_state.patient_name_final or "غير محدد",
+                patient_name=patient_name.strip() or "غير محدد",
                 age=age, sex=sex, weight=weight,
                 cl_cr=cl_cr, is_renal=is_renal,
                 is_preg=is_preg, is_hepatic=is_hepatic,
@@ -1596,16 +1555,21 @@ if uploaded:
                 preg_warn_items=preg_warn_items,
                 organism=organism_type, specimen=culture_type,
                 interactions=interactions_alerts, sir_map=sir_map,
+                colony_count=colony_count,
+                date_in=str(date_in),
+                pus_cells=pus_cells_text,
+                rbcs=rbcs_text,
             )
-            # عرض التقرير كنص ثابت
+
+            # النقطة ١: disabled=True — قابل للقراءة فقط
             st.text_area(
-                "نص التقرير (للقراءة فقط)",
+                "نص التقرير",
                 value=auto_report,
                 height=400,
                 disabled=True,
-                label_visibility="collapsed"
+                label_visibility="collapsed",
+                key=f"report_preview_{file_hash[:8]}"
             )
-            # زر التحميل فقط
             st.download_button(
                 "📥 تنزيل التقرير (TXT)",
                 data=auto_report,
@@ -1617,40 +1581,32 @@ if uploaded:
             # ── صورة الملخص ──────────────────────────────────────────────────
             st.divider()
             st.markdown("### 🖼️ صورة ملخص الحالة")
-            st.caption("جاهزة للطباعة وتسليمها للطبيب — بتصميم Orange Lab")
+            st.caption("تتحدث فوراً عند أي تغيير في البيانات")
 
             if PIL_AVAILABLE:
-                with st.spinner("🎨 جاري رسم الصورة..."):
-                    try:
-                        img_bytes = generate_decision_tree_image(
-                            patient_name=st.session_state.patient_name_final or "غير محدد",
-                            age=age, sex=sex, weight=weight,
-                            cl_cr=cl_cr, is_renal=is_renal, is_preg=is_preg,
-                            organism=organism_type, specimen=culture_type,
-                            first_line=first_line_l,
-                            avoid=avoid_l,   # لا يُستخدم حالياً
-                            preferred=preferred_names,
-                            use_caution=use_caution_names,
-                            contraindicated=banned_names,
-                            reserve=reserve_names,
-                            notes=notes,
-                            colony_count=st.session_state.colony_count,
-                            date_in=str(st.session_state.date_in),
-                            pus_cells=st.session_state.pus_cells,
-                            rbcs=st.session_state.rbcs,
-                        )
-                        img_ok = True
-                    except Exception as e:
-                        st.error(f"فشل توليد الصورة: {e}")
-                        img_ok  = False
-                        img_bytes = None
-
-                if img_ok and img_bytes:
-                    st.image(
-                        img_bytes,
-                        caption="Orange Lab — Clinical Decision Tree",
-                        use_container_width=True
+                # النقطة ٤: لا cache — الصورة تُولَّد في كل run
+                # Streamlit يُعيد التشغيل تلقائياً عند أي تغيير widget
+                # فالصورة دائماً محدّثة بالقيم الحالية
+                try:
+                    img_bytes = generate_decision_tree_image(
+                        patient_name=patient_name.strip() or "غير محدد",
+                        age=age, sex=sex, weight=weight,
+                        cl_cr=cl_cr, is_renal=is_renal, is_preg=is_preg,
+                        organism=organism_type, specimen=culture_type,
+                        first_line=first_line_l,
+                        preferred=preferred_names,
+                        use_caution=use_caution_names,
+                        contraindicated=banned_names,
+                        reserve=reserve_names,
+                        notes=notes,
+                        colony_count=colony_count,
+                        date_in=str(date_in),
+                        pus_cells=pus_cells_text,
+                        rbcs=rbcs_text,
                     )
+                    st.image(img_bytes,
+                             caption="Orange Lab — Clinical Decision Tree",
+                             use_container_width=True)
                     st.download_button(
                         "📥 تنزيل الصورة الملخصة (PNG)",
                         data=img_bytes,
@@ -1658,6 +1614,8 @@ if uploaded:
                         mime="image/png",
                         use_container_width=True,
                     )
+                except Exception as e:
+                    st.error(f"فشل توليد الصورة: {e}")
             else:
                 st.warning("⚠️ أضف `Pillow` لـ requirements.txt لتفعيل صورة الملخص.")
 
