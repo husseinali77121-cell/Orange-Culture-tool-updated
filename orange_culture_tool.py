@@ -1,4 +1,3 @@
-
 # © 2025 Dr / Hussein Ali — Orange Lab, 6 October City, Egypt
 # Orange Culture Tool — All Rights Reserved
 # Unauthorized copying or distribution is prohibited.
@@ -8,7 +7,7 @@ import json
 import re
 import time
 import hashlib
-from datetime import datetime
+from datetime import datetime, date  # أضفنا date
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -163,6 +162,11 @@ def init_session_state() -> None:
         "patient_name_ocr":   "",
         "patient_name_final": "",
         "report_text":        "",
+        # إعدادات جديدة للتقرير
+        "colony_count":       "≥ 10^5 CFU/mL",
+        "date_in":            date.today(),
+        "pus_cells":          0,
+        "rbcs":               0,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -766,20 +770,16 @@ def _draw_section_box(
     x1, y1, x2, y2 = box
     _draw_rbox(draw, box, bg, bd, radius=16, width=3)
 
-    # Title
     draw.text((x1 + 14, y1 + 12), title, fill=title_color, font=font_title)
     cy = y1 + 12 + (font_title.size if hasattr(font_title, "size") else 16) + 6
 
-    # Subtitle
     if subtitle:
         draw.text((x1 + 14, cy), subtitle, fill=(110, 115, 125), font=font_sub)
         cy += (font_sub.size if hasattr(font_sub, "size") else 13) + 4
 
-    # Divider
     draw.line([(x1 + 10, cy), (x2 - 10, cy)], fill=bd, width=1)
     cy += 8
 
-    # Items
     item_h = (font_item.size if hasattr(font_item, "size") else 13) + 7
     for item in items:
         if cy + item_h > y2 - 8:
@@ -801,14 +801,17 @@ def generate_decision_tree_image(
     is_preg: bool,
     organism: str,
     specimen: str,
-    infection_type: str,
     first_line: List[str],
-    avoid: List[str],
+    avoid: List[str],  # will not be displayed now
     preferred: List[str],
     use_caution: List[str],
     contraindicated: List[str],
     reserve: List[str],
     notes: List[str],
+    colony_count: str = "",
+    date_in: str = "",
+    pus_cells: int = 0,
+    rbcs: int = 0,
 ) -> bytes:
     if not PIL_AVAILABLE:
         raise RuntimeError("Pillow غير متاح — أضف Pillow لـ requirements.txt")
@@ -830,9 +833,8 @@ def generate_decision_tree_image(
     BLUE_BD    = (35,  90, 172);  BLUE_BG    = (234, 244, 255);  BLUE_TXT   = (15,   55, 145)
     ALERT_BD   = (205,115,  50);  ALERT_BG   = (255, 248, 232);  ALERT_TXT  = (130,  60,   5)
     SPEC_BD    = (35,  90, 172);  SPEC_BG    = (234, 244, 255)
-    INF_BD     = (30, 130,  65);  INF_BG     = (234, 252, 238)
+    INF_BD     = (30, 130,  65);  INF_BG     = (234, 252, 238)  # used for Microscopic exam
     FL_BD      = (190,138,  28);  FL_BG      = (255, 250, 225)
-    AV_BD      = (183, 52,  52);  AV_BG      = (255, 236, 234)
     FOOT_BD    = (185,192,200);   FOOT_BG    = (247, 249, 251)
 
     # ── Fonts ─────────────────────────────────────────────────────────────────
@@ -866,11 +868,23 @@ def generate_decision_tree_image(
     except Exception:
         ctw = len(ctype_txt) * 8
     draw.text(((CB_X1 + CB_X2 - ctw) // 2, CB_Y1 + 14), ctype_txt, fill=DARK, font=F_SUBTITL)
+
+    # Organism name
     try:
         ow = draw.textlength(organism, font=F_ORG)
     except Exception:
         ow = len(organism) * 15
     draw.text(((CB_X1 + CB_X2 - ow) // 2, CB_Y1 + 42), organism, fill=NAVY, font=F_ORG)
+
+    # Colony count below organism
+    if colony_count:
+        cc_text = f"Colony Count: {colony_count}"
+        try:
+            cclw = draw.textlength(cc_text, font=F_TEXT)
+        except Exception:
+            cclw = len(cc_text) * 7
+        y_cc = CB_Y1 + 42 + (F_ORG.size if hasattr(F_ORG, "size") else 30) + 8
+        draw.text(((CB_X1 + CB_X2 - cclw) // 2, y_cc), cc_text, fill=DARK, font=F_TEXT)
 
     # ── 3. PATIENT DETAILS (left) ─────────────────────────────────────────────
     PB = (PAD, 72, 358, 192)
@@ -918,22 +932,37 @@ def generate_decision_tree_image(
         ay = _draw_text_wrap(draw, AB[0] + 14, ay, f"• {al}", F_TEXT, DARK, AB[2] - AB[0] - 28, line_gap=4)
         ay += 2
 
-    # ── 5. ROW 2: 4 info boxes ────────────────────────────────────────────────
+    # ── 5. ROW 2: 3 info boxes (بدون Avoid) ──────────────────────────────────
     R2_Y1, R2_Y2 = 205, 300
-    r2w = (W - 2 * PAD - 3 * GAP) // 4
-    r2_data = [
-        ("SPECIMEN",          [specimen],                       SPEC_BD, SPEC_BG, "🧪"),
-        ("INFECTION TYPE",    [infection_type],                 INF_BD,  INF_BG,  "🎯"),
-        ("FIRST-LINE OPTIONS", first_line[:4] or ["—"],         FL_BD,   FL_BG,   "📋"),
-        ("AVOID",             avoid[:3] or ["—"],               AV_BD,   AV_BG,   "🚫"),
+    r2w = (W - 2 * PAD - 2 * GAP) // 3   # 3 boxes now
+
+    # Box 1: Specimen + Date In
+    spec_items = [specimen]
+    if date_in:
+        spec_items.append(f"Date In: {date_in}")
+
+    # Box 2: Microscopic Examination
+    micro_items = [
+        f"Pus cells: {pus_cells}/HPF",
+        f"RBCs: {rbcs}/HPF",
     ]
+
+    # Box 3: First-line options
+    fl_items = first_line[:4] or ["—"]
+
+    r2_data = [
+        ("SPECIMEN",          spec_items, SPEC_BD, SPEC_BG, "🧪"),
+        ("MICROSCOPIC EXAM",  micro_items, INF_BD,  INF_BG,  "🔬"),
+        ("FIRST-LINE OPTIONS", fl_items,   FL_BD,   FL_BG,   "📋"),
+    ]
+
     for i, (title, items, bd, bg, icon) in enumerate(r2_data):
         bx1 = PAD + i * (r2w + GAP)
         bx2 = bx1 + r2w
         _draw_rbox(draw, (bx1, R2_Y1, bx2, R2_Y2), bg, bd, radius=12, width=2)
         draw.text((bx1 + 12, R2_Y1 + 9), f"{icon} {title}", fill=bd, font=F_SUBTITL)
         iy = R2_Y1 + 32
-        for it in items[:3]:
+        for it in items[:4]:
             iy = _draw_text_wrap(draw, bx1 + 14, iy, f"• {it}", F_SMALL, DARK, bx2 - bx1 - 24, line_gap=4)
 
     # ── 6. FOUR MAIN COLUMNS ──────────────────────────────────────────────────
@@ -1256,7 +1285,7 @@ if uploaded:
     with col1:
         st.subheader("👤 Patient & Culture")
 
-        # اسم المريض مع زر استعادة OCR
+        # اسم المريض
         ocr_name = (st.session_state.get("patient_name_ocr") or "").strip()
         if ocr_name:
             st.info(f"📖 الاسم من OCR: **{ocr_name}**")
@@ -1299,6 +1328,43 @@ if uploaded:
             help=f"بكتيريا شائعة في عينة {culture_type}",
         )
 
+        # --- إدخالات جديدة: Colony count, Date In, Microscopic exam ---
+        st.divider()
+        st.subheader("🔬 Culture & Microscopic Details")
+
+        colony_count = st.text_input(
+            "Colony Count (CFU/mL)",
+            value=st.session_state.colony_count,
+            placeholder="≥ 10^5 CFU/mL",
+            help="أدخل تعداد المستعمرات",
+            key="colony_count_input"
+        )
+        st.session_state.colony_count = colony_count
+
+        date_in = st.date_input(
+            "Date In (تاريخ استلام العينة)",
+            value=st.session_state.date_in,
+            key="date_in_input"
+        )
+        st.session_state.date_in = date_in
+
+        col_pus, col_rbc = st.columns(2)
+        with col_pus:
+            pus_cells = st.number_input(
+                "Pus Cells (/HPF)", min_value=0, max_value=100,
+                value=st.session_state.pus_cells, step=1,
+                key="pus_cells_input"
+            )
+            st.session_state.pus_cells = pus_cells
+        with col_rbc:
+            rbcs = st.number_input(
+                "RBCs (/HPF)", min_value=0, max_value=100,
+                value=st.session_state.rbcs, step=1,
+                key="rbcs_input"
+            )
+            st.session_state.rbcs = rbcs
+
+        # Organism guidance
         if organism_type in ORGANISM_PROFILE:
             op = ORGANISM_PROFILE[organism_type]
             with st.expander("📌 Organism Guidance", expanded=True):
@@ -1357,7 +1423,7 @@ if uploaded:
     with col2:
         st.subheader("💊 Antibiotic Analysis")
 
-        # ── تعديل SIR قابل للتحرير ──────────────────────────────────────────
+        # ── تعديل SIR ──────────────────────────────────────────────────────
         ocr_sir_map = payload["sir_map"]
         if ocr_sir_map:
             st.markdown("**📊 نتائج المزرعة — S / I / R** *(عدّل أي قيمة خطأ)*")
@@ -1493,15 +1559,16 @@ if uploaded:
                 item['name'] for item in warned
                 if item['name'] not in reserve_names
             ]
+            # ضم أدوية الحمل الحذرة إلى قائمة التحذير
+            preg_caution_names = [item['name'] for item in preg_warn_items]
+            use_caution_names = uniq_keep_order(warned_names + preg_caution_names)
+
             banned_names = uniq_keep_order([item['name'] for item in banned])
 
             org_profile   = ORGANISM_PROFILE.get(organism_type, {})
             first_line_l  = org_profile.get("first_line", [])
-            avoid_l       = org_profile.get("avoid", [])
-            infection_type = (
-                "Uncomplicated UTI" if culture_type == "Urine"
-                else f"{culture_type} Infection"
-            )
+            avoid_l       = org_profile.get("avoid", [])  # سيتم تجاهله في الصورة
+
             notes: List[str] = []
             if is_renal:
                 notes.append(f"Renal impairment: CrCl {cl_cr:.1f} ml/min — dose adjustment required.")
@@ -1516,9 +1583,9 @@ if uploaded:
             notes.append("Treatment guided by severity and local resistance patterns.")
             notes.append("De-escalate based on culture & sensitivity.")
 
-            # ── التقرير النصي القابل للتعديل ─────────────────────────────────
+            # ── التقرير النصي (غير قابل للتعديل الآن) ───────────────────────
             st.markdown("### 📋 التقرير السريري")
-            st.caption("✏️ عدّل مباشرة — مفيد لتصحيح أخطاء OCR أو إضافة ملاحظات")
+            st.caption("النص النهائي — حمل الملف للتعديل الخارجي")
 
             auto_report = generate_report(
                 patient_name=st.session_state.patient_name_final or "غير محدد",
@@ -1530,30 +1597,22 @@ if uploaded:
                 organism=organism_type, specimen=culture_type,
                 interactions=interactions_alerts, sir_map=sir_map,
             )
-
-            edited_report = st.text_area(
-                "تعديل التقرير",
-                value=st.session_state.report_text if st.session_state.report_text else auto_report,
+            # عرض التقرير كنص ثابت
+            st.text_area(
+                "نص التقرير (للقراءة فقط)",
+                value=auto_report,
                 height=400,
-                label_visibility="collapsed",
-                key=f"report_{file_hash[:8]}",
+                disabled=True,
+                label_visibility="collapsed"
             )
-            st.session_state.report_text = edited_report
-
-            r1, r2 = st.columns(2)
-            with r1:
-                st.download_button(
-                    "📥 تنزيل التقرير (TXT)",
-                    data=edited_report,
-                    file_name=f"Orange_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                    mime="text/plain",
-                    use_container_width=True,
-                )
-            with r2:
-                if st.button("🔄 إعادة توليد التقرير", use_container_width=True,
-                             key=f"regen_{file_hash[:8]}"):
-                    st.session_state.report_text = ""
-                    st.rerun()
+            # زر التحميل فقط
+            st.download_button(
+                "📥 تنزيل التقرير (TXT)",
+                data=auto_report,
+                file_name=f"Orange_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
 
             # ── صورة الملخص ──────────────────────────────────────────────────
             st.divider()
@@ -1568,13 +1627,17 @@ if uploaded:
                             age=age, sex=sex, weight=weight,
                             cl_cr=cl_cr, is_renal=is_renal, is_preg=is_preg,
                             organism=organism_type, specimen=culture_type,
-                            infection_type=infection_type,
-                            first_line=first_line_l, avoid=avoid_l,
+                            first_line=first_line_l,
+                            avoid=avoid_l,   # لا يُستخدم حالياً
                             preferred=preferred_names,
-                            use_caution=warned_names,
+                            use_caution=use_caution_names,
                             contraindicated=banned_names,
                             reserve=reserve_names,
                             notes=notes,
+                            colony_count=st.session_state.colony_count,
+                            date_in=str(st.session_state.date_in),
+                            pus_cells=st.session_state.pus_cells,
+                            rbcs=st.session_state.rbcs,
                         )
                         img_ok = True
                     except Exception as e:
