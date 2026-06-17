@@ -12,6 +12,7 @@ from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
 
 import streamlit as st
+import streamlit.components.v1 as stc_components
 
 try:
     import cv2
@@ -556,7 +557,7 @@ def extract_all_data_cached(file_bytes: bytes) -> Dict[str, Any]:
             sir_map[matched_abx] = result
     return {
         "patient": {
-            "Name":     detect_patient_name(full_text),
+            "Name":     None,  # الاسم يُدخل يدوياً فقط
             "Age":      detect_age(full_text),
             "Sex":      detect_sex(text_lower),
             "Specimen": detect_specimen(text_lower),
@@ -694,6 +695,158 @@ def analyze_antibiotics(
     warned          = sorted(warned,          key=lambda x: x.get("priority", 999))
     preg_warn_items = sorted(preg_warn_items, key=lambda x: x.get("priority", 999))
     return allowed, warned, banned, preg_warn_items, sorted(set(interactions_alerts))
+
+# =========================================================
+# MDR / XDR / PDR Classification — CDC & ECDC 2017
+# =========================================================
+# تعريف الفئات حسب Magiorakos et al. 2012 (ECDC/CDC)
+MDR_CATEGORIES = {
+    "Aminoglycosides":         ["Gentamicin","Amikacin"],
+    "Antipseudomonal Penics":  ["Piperacillin + Tazobactam"],
+    "Extended-Sp Cephalosporins": ["Ceftriaxone","Cefotaxime","Cefixime","Cefuroxime"],
+    "Carbapenems":             ["Imipenem/Cilastatin","Meropenem","Ertapenem"],
+    "Fluoroquinolones":        ["Ciprofloxacin","Levofloxacin","Ofloxacin","Norfloxacin"],
+    "Folate PI":               ["Trimethoprim/Sulfamethoxazole"],
+    "Penicillins+BLI":         ["Amoxicillin + Clavulanic acid","Ampicillin/Sulbactam"],
+    "Polymyxins":              ["Colistin"],
+    "Cephalosporins-4th":      ["Cefepime"],
+    "Cephalosporins-3rd-AP":   ["Ceftazidime","Cefoperazone","Cefoperazone + Sulbactam"],
+    "Glycopeptides":           ["Vancomycin"],
+    "Oxazolidinones":          ["Linezolid"],
+    "Nitrofurans":             ["Nitrofurantoin"],
+    "Fosfomycins":             ["Fosfomycin"],
+}
+
+def classify_mdr(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
+    """
+    صنّف المقاومة وفق CDC/ECDC:
+    MDR = مقاوم لـ ≥1 عامل في ≥3 فئات
+    XDR = مقاوم لكل الفئات ما عدا ≤2
+    PDR = مقاوم لكل الفئات
+    """
+    if not sir_map:
+        return {"level": None, "resistant_categories": [], "total_tested": 0}
+
+    resistant_cats = []
+    susceptible_cats = []
+
+    for cat, drugs in MDR_CATEGORIES.items():
+        tested = [d for d in drugs if d in sir_map]
+        if not tested:
+            continue
+        if any(sir_map.get(d) == "R" for d in tested):
+            resistant_cats.append(cat)
+        else:
+            susceptible_cats.append(cat)
+
+    total_cats = len(resistant_cats) + len(susceptible_cats)
+    r_count    = len(resistant_cats)
+
+    if total_cats == 0:
+        return {"level": None, "resistant_categories": [], "total_tested": 0}
+
+    if r_count >= total_cats:
+        level = "PDR"
+    elif total_cats - r_count <= 2 and r_count > 0:
+        level = "XDR"
+    elif r_count >= 3:
+        level = "MDR"
+    else:
+        level = None
+
+    return {
+        "level":                level,
+        "resistant_categories": resistant_cats,
+        "susceptible_categories": susceptible_cats,
+        "total_tested":         total_cats,
+        "resistant_count":      r_count,
+    }
+
+MDR_INFO = {
+    "MDR": {
+        "label":  "MDR — Multi-Drug Resistant",
+        "color":  "warning",
+        "icon":   "⚠️",
+        "detail": "مقاوم لعامل واحد على الأقل في 3 فئات دوائية أو أكثر.",
+        "action": "تجنب الأدوية المقاومة. استشر الصيدلي السريري.",
+    },
+    "XDR": {
+        "label":  "XDR — Extensively Drug Resistant",
+        "color":  "error",
+        "icon":   "🔴",
+        "detail": "مقاوم لمعظم الفئات الدوائية — حساس لفئتين أو أقل فقط.",
+        "action": "يستلزم استشارة متخصص. الخيارات محدودة جداً.",
+    },
+    "PDR": {
+        "label":  "PDR — Pan-Drug Resistant",
+        "color":  "error",
+        "icon":   "🚨",
+        "detail": "مقاوم لجميع الفئات الدوائية المتاحة.",
+        "action": "حالة طارئة — استشارة معدية فورية. لا خيارات قياسية.",
+    },
+}
+
+# =========================================================
+# ESBL Predictor — وفق EUCAST & CLSI criteria
+# =========================================================
+ESBL_PRODUCERS = [
+    "Klebsiella spp.", "E. coli", "Proteus mirabilis",
+    "Klebsiella pneumoniae", "Enterobacter cloacae",
+]
+
+# المضادات الحيوية المرتبطة بالـ ESBL
+ESBL_MARKERS = {
+    "high":   ["Ceftriaxone","Cefotaxime","Ceftazidime","Cefepime"],
+    "medium": ["Cefuroxime","Cefixime","Cefaclor","Cephalexin"],
+}
+
+def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
+    """
+    تنبؤ بإنتاج ESBL بناءً على نمط المقاومة
+    High: مقاومة لـ ≥2 من 3rd/4th gen Cephalosporins
+    """
+    if not sir_map:
+        return {"probability": None}
+
+    # تحقق أن الكائن من المنتجين المحتملين
+    is_producer_organism = any(
+        prod.lower() in organism.lower()
+        for prod in ESBL_PRODUCERS
+    )
+    if not is_producer_organism:
+        return {"probability": None}
+
+    high_markers_R = [d for d in ESBL_MARKERS["high"] if sir_map.get(d) == "R"]
+    med_markers_R  = [d for d in ESBL_MARKERS["medium"] if sir_map.get(d) == "R"]
+    carb_R         = any(sir_map.get(d) == "R"
+                         for d in ["Imipenem/Cilastatin","Meropenem","Ertapenem"])
+
+    if carb_R and len(high_markers_R) >= 2:
+        # مقاومة Carbapenems + Cephalosporins → احتمال KPC أو MBL
+        return {
+            "probability": "carbapenemase",
+            "markers_R":   high_markers_R,
+            "detail":      "نمط يُشير لإنزيم Carbapenemase (KPC/MBL/OXA). تحقق فوراً.",
+            "action":      "أرسل للمختبر المرجعي. ارفع بروتوكول العزل.",
+        }
+    elif len(high_markers_R) >= 2:
+        return {
+            "probability": "high",
+            "markers_R":   high_markers_R,
+            "detail":      f"مقاومة لـ {', '.join(high_markers_R)} — احتمال ESBL مرتفع.",
+            "action":      "استخدم Carbapenems للعدوى الشديدة. تجنب Cephalosporins.",
+        }
+    elif len(high_markers_R) == 1 or len(med_markers_R) >= 2:
+        return {
+            "probability": "moderate",
+            "markers_R":   high_markers_R + med_markers_R,
+            "detail":      "نمط مقاومة يستدعي إجراء تأكيد ESBL.",
+            "action":      "أجرِ Double Disk Synergy Test أو PCR للتأكيد.",
+        }
+    else:
+        return {"probability": "low"}
+
+
 
 # =========================================================
 # أدوات رسم الصورة
@@ -988,7 +1141,7 @@ def generate_decision_tree_image(
         p_lines.append(f"CrCl: {cl_cr:.1f} ml/min ({get_renal_severity(cl_cr)})")
     else:
         p_lines.append("Renal: Normal")
-    if sex == "Female":
+    if sex == "Female" and age >= 18:
         p_lines.append(f"Pregnancy: {'Yes' if is_preg else 'No'}")
     if age < 18:
         p_lines.append("Verify age-specific suitability.")
@@ -1086,18 +1239,27 @@ def generate_decision_tree_image(
     FY2 = H - 8*S
     fw  = (W - 2*P - 2*G) // 3
 
-    # WHO AWaRe
+    # WHO AWaRe — badges أفقية بجانب بعض مثل الأصلية
     fx1 = P;  fx2 = fx1+fw
     rbox(draw, (fx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
     draw.text((fx1+12*S, FY1+10*S), "WHO AWaRe CLASSIFICATION", fill=DARK, font=F_SUBTITL)
-    wy = FY1 + 32*S
-    for label, color in [("ACCESS", GREEN_TXT), ("WATCH", AMBER_TXT), ("RESERVE", RED_TXT)]:
+    # رسم الـ badges أفقياً
+    bx = fx1 + 12*S
+    by = FY1 + 34*S
+    for label, color, desc in [
+        ("ACCESS",  GREEN_TXT, "First or second choice"),
+        ("WATCH",   AMBER_TXT, "Use with caution"),
+        ("RESERVE", RED_TXT,   "Last resort"),
+    ]:
         lw = tw(draw, label, F_BADGE)
-        rbox(draw, (fx1+12*S-4*S, wy-2*S, fx1+12*S+lw+8*S, wy+fh(F_BADGE)+4*S),
+        badge_w = int(lw) + 10*S
+        rbox(draw, (bx-2*S, by-2*S, bx+badge_w, by+fh(F_BADGE)+4*S),
              color, color, radius=5, width=1)
-        draw.text((fx1+12*S, wy), label, fill=WHITE, font=F_BADGE)
-        wy += fh(F_BADGE) + 8*S
-    draw.text((fx1+12*S, FY2-16*S), "First/second | Caution | Last resort",
+        draw.text((bx+3*S, by), label, fill=WHITE, font=F_BADGE)
+        bx += badge_w + 6*S
+    # وصف أسفل
+    draw.text((fx1+12*S, by+fh(F_BADGE)+8*S),
+              "First/second choice | Use with caution | Last resort",
               fill=GRAY, font=F_SMALL)
 
     # Summary
@@ -1116,20 +1278,39 @@ def generate_decision_tree_image(
         draw.text((sx, FY1+32*S), num, fill=clr,  font=F_SUMNUM)
         draw.text((sx, FY1+62*S), lbl, fill=GRAY, font=F_SMALL)
 
-    # Notes
+    # Notes + References — نقسّم الثلث الثالث لقسمين
     fx1 = P+2*(fw+G);  fx2 = W-P
-    rbox(draw, (fx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
+    fmid = fx1 + (fx2-fx1)//2 - 4*S
+
+    # Notes (يسار)
+    rbox(draw, (fx1, FY1, fmid, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
     draw.text((fx1+12*S, FY1+10*S), "📋  NOTES", fill=DARK, font=F_SUBTITL)
     ny = FY1+32*S
     for note in (notes or [])[:4]:
         ny = text_wrap(draw, fx1+12*S, ny, f"• {note}",
-                       F_SMALL, DARK, fx2-fx1-22*S, gap=4)
+                       F_SMALL, DARK, fmid-fx1-18*S, gap=4)
 
-    # Branding
+    # References (يمين)
+    frx1 = fmid + 6*S
+    rbox(draw, (frx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
+    draw.text((frx1+12*S, FY1+10*S), "📚  REFERENCES", fill=DARK, font=F_SUBTITL)
+    refs = [
+        "EUCAST 2026",
+        "CLSI M100 2026",
+        "IDSA AMR 2025",
+        "WHO AWaRe 2025",
+        "Egypt National Guidelines",
+        "BNF 2025 | FDA Labels",
+    ]
+    ry = FY1+32*S
+    for ref in refs:
+        ry = text_wrap(draw, frx1+12*S, ry, f"• {ref}",
+                       F_SMALL, DARK, fx2-frx1-18*S, gap=3)
+
+    # Branding — نص خفيف جداً (opacity محاكاة بلون فاتح جداً)
     city_part = f" | {lab_city}" if lab_city else ""
-    brand = (f"Developed by Dr / Hussein Ali | {lab_name}{city_part}  |  "
-             "EUCAST 2026 | CLSI M100 2026 | IDSA AMR 2025 | Egypt National Guidelines")
-    draw.text((P, H-6*S), brand, fill=GRAY, font=F_SMALL)
+    brand = f"EUCAST 2026 | CLSI M100 2026 | IDSA AMR 2025 | WHO AWaRe 2025 | Egypt National Guidelines  •  {lab_name}{city_part}"
+    draw.text((P, H-6*S), brand, fill=(195, 200, 210), font=F_SMALL)
 
     # ── Export Ultra HD ───────────────────────────────────────────────────────
     buf = io.BytesIO()
@@ -1161,6 +1342,28 @@ def generate_decision_tree_image(
         L += ["\nINTERACTIONS / WARNINGS", sep2]
         for item in sorted(set(interactions)):
             L.append(f"- {item}")
+
+    # MDR/XDR/PDR + ESBL في التقرير
+    if sir_map:
+        mdr_r = classify_mdr(organism, sir_map)
+        if mdr_r["level"]:
+            info = MDR_INFO[mdr_r["level"]]
+            L += [f"\n{info['icon']} RESISTANCE CLASSIFICATION: {info['label']}", sep2,
+                  info["detail"],
+                  f"Resistant ({mdr_r['resistant_count']}/{mdr_r['total_tested']}): "
+                  + ", ".join(mdr_r['resistant_categories']),
+                  f"Action: {info['action']}", ""]
+        esbl_r = predict_esbl(organism, sir_map)
+        prob   = esbl_r.get("probability")
+        if prob == "carbapenemase":
+            L += ["\n🚨 POSSIBLE CARBAPENEMASE PRODUCER", sep2,
+                  esbl_r["detail"], f"Action: {esbl_r['action']}", ""]
+        elif prob == "high":
+            L += ["\n⚠️  HIGH PROBABILITY ESBL PRODUCER", sep2,
+                  esbl_r["detail"], f"Action: {esbl_r['action']}", ""]
+        elif prob == "moderate":
+            L += ["\n🔶 ESBL CONFIRMATION RECOMMENDED", sep2,
+                  esbl_r["detail"], f"Action: {esbl_r['action']}", ""]
 
     L += ["\nRECOMMENDED ANTIBIOTICS", sep]
     if allowed:
@@ -1294,7 +1497,7 @@ def generate_report(
     if is_renal:
         L.append(f"CrCl     : {cl_cr:.1f} ml/min ({get_renal_severity(cl_cr)})")
     L.append(f"Hepatic  : {'IMPAIRED' if is_hepatic else 'Normal'}")
-    if sex == "Female":
+    if sex == "Female" and age >= 18:
         L.append(f"Pregnant : {'Yes' if is_preg else 'No'}")
 
     L += ["\nCULTURE & MICROSCOPY", sep2,
@@ -1331,6 +1534,28 @@ def generate_report(
         L += ["\nINTERACTIONS / WARNINGS", sep2]
         for item in sorted(set(interactions)):
             L.append(f"- {item}")
+
+    # MDR/XDR/PDR + ESBL في التقرير
+    if sir_map:
+        mdr_r = classify_mdr(organism, sir_map)
+        if mdr_r["level"]:
+            info = MDR_INFO[mdr_r["level"]]
+            L += [f"\n{info['icon']} RESISTANCE CLASSIFICATION: {info['label']}", sep2,
+                  info["detail"],
+                  f"Resistant ({mdr_r['resistant_count']}/{mdr_r['total_tested']}): "
+                  + ", ".join(mdr_r['resistant_categories']),
+                  f"Action: {info['action']}", ""]
+        esbl_r = predict_esbl(organism, sir_map)
+        prob   = esbl_r.get("probability")
+        if prob == "carbapenemase":
+            L += ["\n🚨 POSSIBLE CARBAPENEMASE PRODUCER", sep2,
+                  esbl_r["detail"], f"Action: {esbl_r['action']}", ""]
+        elif prob == "high":
+            L += ["\n⚠️  HIGH PROBABILITY ESBL PRODUCER", sep2,
+                  esbl_r["detail"], f"Action: {esbl_r['action']}", ""]
+        elif prob == "moderate":
+            L += ["\n🔶 ESBL CONFIRMATION RECOMMENDED", sep2,
+                  esbl_r["detail"], f"Action: {esbl_r['action']}", ""]
 
     L += ["\nRECOMMENDED ANTIBIOTICS", sep]
     if allowed:
@@ -1449,30 +1674,56 @@ if startup_issues:
 st.title("🛡️ Orange Culture Tool")
 st.caption("AI-Assisted Antibiotic Decision Support — Egyptian Market Edition")
 
-# ── إعدادات المعمل — expander ثابت دائماً مرئي ──────────────────────────
+# ── إعدادات المعمل — مع حفظ تلقائي في localStorage ──────────────────────
+# تحميل من localStorage عند أول تشغيل
+_ls_html = """
+<script>
+(function() {
+    const saved_name = localStorage.getItem('oct_lab_name');
+    const saved_city = localStorage.getItem('oct_lab_city');
+    if (saved_name) {
+        const ev = new CustomEvent('lab_settings', {detail:{name:saved_name,city:saved_city||''}});
+        window.parent.document.dispatchEvent(ev);
+    }
+})();
+</script>
+"""
+stc_components.html(_ls_html, height=0)
+
 with st.expander("🏥 إعدادات المعمل", expanded=False):
     lc1, lc2 = st.columns(2)
     with lc1:
         lab_name_input = st.text_input(
             "اسم المعمل / المستشفى",
             value=st.session_state.get("lab_name", "Orange Lab"),
-            placeholder="مثال: Orange Lab",
+            placeholder="مثال: Bustan Lab",
             key="lab_name_widget"
         )
-        st.session_state.lab_name = lab_name_input.strip() or "Orange Lab"
+        if lab_name_input.strip():
+            st.session_state.lab_name = lab_name_input.strip()
     with lc2:
         lab_city_input = st.text_input(
             "المدينة / الجهة (اختياري)",
             value=st.session_state.get("lab_city", ""),
-            placeholder="مثال: 6 October City",
+            placeholder="مثال: Cairo",
             key="lab_city_widget"
         )
         st.session_state.lab_city = lab_city_input.strip()
+
+    # حفظ في localStorage عند أي تغيير
+    _save_html = f"""
+<script>
+localStorage.setItem('oct_lab_name', '{st.session_state.lab_name}');
+localStorage.setItem('oct_lab_city', '{st.session_state.lab_city}');
+</script>
+"""
+    stc_components.html(_save_html, height=0)
+
     # معاينة فورية
     preview_txt = f"🔬  {st.session_state.lab_name}"
     if st.session_state.lab_city:
         preview_txt += f"  |  {st.session_state.lab_city}"
-    st.caption(f"معاينة الترويسة: **{preview_txt}**")
+    st.caption(f"معاينة الترويسة: **{preview_txt}** *(محفوظ تلقائياً)*")
 
 uploaded = st.file_uploader(
     "📷 Upload Culture Report Image",
@@ -1492,8 +1743,9 @@ if uploaded:
                 st.session_state.ocr_data           = payload
                 st.session_state.last_file_hash     = file_hash
                 st.session_state.sir_map_edited     = dict(payload["sir_map"])
-                st.session_state.patient_name_ocr   = payload["patient"].get("Name") or ""
-                st.session_state.patient_name_final = payload["patient"].get("Name") or ""
+                # الاسم يُدخل يدوياً — لا نغير ما أدخله المستخدم عند تحميل صورة جديدة
+                st.session_state.patient_name_ocr   = ""
+                # patient_name_final محفوظ من الجلسة السابقة (لا نمسحه)
             except Exception as e:
                 st.error(f"تعذر تحليل الصورة: {e}")
                 st.stop()
@@ -1517,29 +1769,14 @@ if uploaded:
     with col1:
         st.subheader("👤 Patient & Culture")
 
-        # اسم المريض
-        ocr_name = (st.session_state.get("patient_name_ocr") or "").strip()
-        if ocr_name:
-            st.info(f"📖 الاسم من OCR: **{ocr_name}**")
-        else:
-            st.caption("لم يُتعرف على اسم المريض تلقائياً — أدخله يدوياً.")
-
-        nc1, nc2 = st.columns([5, 1])
-        with nc1:
-            # النقطة ٢: الاسم يُقرأ مباشرة من الـ widget — أي تغيير ينعكس فوراً
-            patient_name = st.text_input(
-                "👤 Patient Name (اسم المريض)",
-                value=st.session_state.get("patient_name_final", ""),
-                placeholder="أدخل أو صحّح اسم المريض",
-                help="يظهر فوراً في التقرير والصورة عند أي تغيير.",
-                key=f"pname_{file_hash[:8]}"
-            )
-        with nc2:
-            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-            if st.button("↺ OCR", use_container_width=True, key=f"ocr_name_{file_hash[:8]}"):
-                st.session_state.patient_name_final = ocr_name
-                st.rerun()
-        # تحديث session_state فوراً بقيمة الـ widget الحالية
+        # اسم المريض — إدخال يدوي فقط
+        patient_name = st.text_input(
+            "👤 اسم المريض / Patient Name",
+            value=st.session_state.get("patient_name_final", ""),
+            placeholder="أدخل اسم المريض",
+            help="يظهر في التقرير وصورة الملخص.",
+            key=f"pname_{file_hash[:8]}"
+        )
         st.session_state.patient_name_final = patient_name.strip()
 
         culture_type = st.selectbox(
@@ -1641,7 +1878,7 @@ if uploaded:
 
         is_hepatic = st.checkbox("🚩 Hepatic Impairment")
         is_preg    = False
-        if sex == "Female" and 12 <= age <= 55:
+        if sex == "Female" and 18 <= age <= 55:
             is_preg = st.checkbox("🤰 Patient is Pregnant")
 
         current_meds = st.multiselect("💊 Current Medications", COMMON_MEDS)
@@ -1699,6 +1936,43 @@ if uploaded:
             st.warning("⚡ Interactions / Hepatic Warnings")
             for alert in interactions_alerts:
                 st.write(alert)
+
+        # ── MDR / XDR / PDR Classification ───────────────────────────────────
+        mdr_result  = classify_mdr(organism_type, sir_map)
+        esbl_result = predict_esbl(organism_type, sir_map)
+
+        if mdr_result["level"] or (esbl_result.get("probability") and esbl_result["probability"] not in ("low", None)):
+            with st.expander("🧬 Resistance Classification", expanded=True):
+
+                # MDR/XDR/PDR
+                if mdr_result["level"]:
+                    info = MDR_INFO[mdr_result["level"]]
+                    _rc  = mdr_result["resistant_count"]
+                    _rt  = mdr_result["total_tested"]
+                    _cats = ", ".join(mdr_result["resistant_categories"])
+                    _msg = (f"{info['icon']} **{info['label']}**  \n"
+                            f"{info['detail']}  \n"
+                            f"Resistant categories ({_rc}/{_rt}): {_cats}  \n"
+                            f"🔹 {info['action']}")
+                    if mdr_result["level"] == "MDR":
+                        st.warning(_msg)
+                    else:
+                        st.error(_msg)
+
+                # ESBL Predictor
+                prob = esbl_result.get("probability")
+                if prob == "carbapenemase":
+                    _em = ("🚨 **Possible Carbapenemase (KPC/MBL/OXA)**  \n"
+                           + esbl_result["detail"] + "  \n🔹 " + esbl_result["action"])
+                    st.error(_em)
+                elif prob == "high":
+                    _em = ("⚠️ **High Probability ESBL Producer**  \n"
+                           + esbl_result["detail"] + "  \n🔹 " + esbl_result["action"])
+                    st.error(_em)
+                elif prob == "moderate":
+                    _em = ("🔶 **ESBL Confirmation Recommended**  \n"
+                           + esbl_result["detail"] + "  \n🔹 " + esbl_result["action"])
+                    st.warning(_em)
 
         if is_preg and preg_warn_items:
             st.markdown("---")
@@ -1877,6 +2151,8 @@ if uploaded:
                         date_in=str(date_in),
                         pus_cells=pus_cells_text,
                         rbcs=rbcs_text,
+                        lab_name=st.session_state.get("lab_name", "Orange Lab"),
+                        lab_city=st.session_state.get("lab_city", ""),
                     )
                     st.image(img_bytes,
                              caption=f"Orange Lab — Clinical Decision Tree  |  {patient_name.strip() or organism_type}  |  {str(date_in)}",
