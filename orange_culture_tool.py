@@ -7,7 +7,7 @@ import json
 import re
 import time
 import hashlib
-from datetime import datetime, date  # أضفنا date
+from datetime import datetime, date
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -162,11 +162,11 @@ def init_session_state() -> None:
         "patient_name_ocr":   "",
         "patient_name_final": "",
         "report_text":        "",
-        # إعدادات جديدة للتقرير
+        # إعدادات التقرير الجديدة – نصوص بدلاً من أرقام
         "colony_count":       "≥ 10^5 CFU/mL",
         "date_in":            date.today(),
-        "pus_cells":          0,
-        "rbcs":               0,
+        "pus_cells_text":     "",   # نص حر مثل "4 - 6"
+        "rbcs_text":          "",   # نص حر مثل "2 - 4"
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -174,6 +174,8 @@ def init_session_state() -> None:
 
 init_session_state()
 
+# ... (باقي الدوال المساعدة كما هي دون تغيير،
+#      تم حذف التكرار لتوفير المساحة ولكنها موجودة في الكود الكامل)
 # =========================================================
 # أدوات مساعدة
 # =========================================================
@@ -318,7 +320,7 @@ def detect_patient_name(text: str) -> Optional[str]:
     return None
 
 # =========================================================
-# تسجيل الدخول والاشتراك
+# تسجيل الدخول والاشتراك (بدون تغيير)
 # =========================================================
 def get_subscription_days_left(email: str) -> Optional[int]:
     email = (email or "").strip().lower()
@@ -435,7 +437,7 @@ def render_top_bar() -> None:
             logout("تم تسجيل الخروج بنجاح.")
 
 # =========================================================
-# OCR ومعالجة الصور
+# OCR ومعالجة الصور (بدون تغيير)
 # =========================================================
 def preprocess_image(file_bytes: bytes) -> Tuple[Any, Any]:
     ensure_ocr_dependencies()
@@ -577,7 +579,7 @@ def extract_all_data_cached(file_bytes: bytes) -> Dict[str, Any]:
     }
 
 # =========================================================
-# التحليل السريري
+# التحليل السريري (بدون تغيير)
 # =========================================================
 def is_intrinsically_avoided(organism_type: str, drug_name: str, drug_info: Dict[str, Any]) -> bool:
     organism_avoid = (ORGANISM_PROFILE.get(organism_type) or {}).get("avoid", [])
@@ -705,7 +707,7 @@ def analyze_antibiotics(
     return allowed, warned, banned, preg_warn_items, sorted(set(interactions_alerts))
 
 # =========================================================
-# صورة Clinical Decision Tree — بنفس تصميم Orange Lab
+# صورة Clinical Decision Tree — مع التعديلات الجديدة
 # =========================================================
 def _get_font(size: int = 14, bold: bool = False) -> Any:
     if not PIL_AVAILABLE:
@@ -802,7 +804,7 @@ def generate_decision_tree_image(
     organism: str,
     specimen: str,
     first_line: List[str],
-    avoid: List[str],  # will not be displayed now
+    avoid: List[str],
     preferred: List[str],
     use_caution: List[str],
     contraindicated: List[str],
@@ -810,13 +812,12 @@ def generate_decision_tree_image(
     notes: List[str],
     colony_count: str = "",
     date_in: str = "",
-    pus_cells: int = 0,
-    rbcs: int = 0,
+    pus_cells: str = "",   # أصبح نصًا
+    rbcs: str = "",        # أصبح نصًا
 ) -> bytes:
     if not PIL_AVAILABLE:
         raise RuntimeError("Pillow غير متاح — أضف Pillow لـ requirements.txt")
 
-    # ── Dimensions & Palette ─────────────────────────────────────────────────
     W, H   = 1264, 843
     PAD    = 16
     GAP    = 10
@@ -833,11 +834,10 @@ def generate_decision_tree_image(
     BLUE_BD    = (35,  90, 172);  BLUE_BG    = (234, 244, 255);  BLUE_TXT   = (15,   55, 145)
     ALERT_BD   = (205,115,  50);  ALERT_BG   = (255, 248, 232);  ALERT_TXT  = (130,  60,   5)
     SPEC_BD    = (35,  90, 172);  SPEC_BG    = (234, 244, 255)
-    INF_BD     = (30, 130,  65);  INF_BG     = (234, 252, 238)  # used for Microscopic exam
+    INF_BD     = (30, 130,  65);  INF_BG     = (234, 252, 238)
     FL_BD      = (190,138,  28);  FL_BG      = (255, 250, 225)
     FOOT_BD    = (185,192,200);   FOOT_BG    = (247, 249, 251)
 
-    # ── Fonts ─────────────────────────────────────────────────────────────────
     F_HEADER  = _get_font(20, True)
     F_TITLE   = _get_font(15, True)
     F_SUBTITL = _get_font(12, True)
@@ -849,7 +849,7 @@ def generate_decision_tree_image(
     img  = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
 
-    # ── 1. HEADER ─────────────────────────────────────────────────────────────
+    # HEADER
     _draw_rbox(draw, (PAD, 6, W - PAD, 62), NAVY, NAVY, radius=12, width=1)
     htxt = "🔬  ORANGE LAB – CLINICAL DECISION TREE"
     try:
@@ -858,7 +858,7 @@ def generate_decision_tree_image(
         hw = len(htxt) * 11
     draw.text(((W - hw) // 2, 16), htxt, fill=WHITE, font=F_HEADER)
 
-    # ── 2. CENTER CULTURE BOX ─────────────────────────────────────────────────
+    # CENTER CULTURE BOX
     CB_X1, CB_X2 = 368, 870
     CB_Y1, CB_Y2 = 72, 192
     _draw_rbox(draw, (CB_X1, CB_Y1, CB_X2, CB_Y2), WHITE, NAVY, radius=14, width=2)
@@ -869,14 +869,12 @@ def generate_decision_tree_image(
         ctw = len(ctype_txt) * 8
     draw.text(((CB_X1 + CB_X2 - ctw) // 2, CB_Y1 + 14), ctype_txt, fill=DARK, font=F_SUBTITL)
 
-    # Organism name
     try:
         ow = draw.textlength(organism, font=F_ORG)
     except Exception:
         ow = len(organism) * 15
     draw.text(((CB_X1 + CB_X2 - ow) // 2, CB_Y1 + 42), organism, fill=NAVY, font=F_ORG)
 
-    # Colony count below organism
     if colony_count:
         cc_text = f"Colony Count: {colony_count}"
         try:
@@ -886,7 +884,7 @@ def generate_decision_tree_image(
         y_cc = CB_Y1 + 42 + (F_ORG.size if hasattr(F_ORG, "size") else 30) + 8
         draw.text(((CB_X1 + CB_X2 - cclw) // 2, y_cc), cc_text, fill=DARK, font=F_TEXT)
 
-    # ── 3. PATIENT DETAILS (left) ─────────────────────────────────────────────
+    # PATIENT DETAILS
     PB = (PAD, 72, 358, 192)
     _draw_rbox(draw, PB, PURPLE_BG, PURPLE_BD, radius=14, width=3)
     draw.text((PAD + 14, 84), "PATIENT DETAILS", fill=PURPLE_BD, font=F_TITLE)
@@ -909,7 +907,7 @@ def generate_decision_tree_image(
         draw.text((PAD + 14, py), f"• {ln}", fill=DARK, font=F_TEXT)
         py += F_TEXT.size + 5 if hasattr(F_TEXT, "size") else 17
 
-    # ── 4. ALERT (right) ─────────────────────────────────────────────────────
+    # ALERT BOX
     AB = (885, 72, W - PAD, 192)
     _draw_rbox(draw, AB, ALERT_BG, ALERT_BD, radius=14, width=3)
     draw.text((AB[0] + 14, 84), "⚠  IMPORTANT ALERT", fill=ALERT_TXT, font=F_TITLE)
@@ -932,22 +930,25 @@ def generate_decision_tree_image(
         ay = _draw_text_wrap(draw, AB[0] + 14, ay, f"• {al}", F_TEXT, DARK, AB[2] - AB[0] - 28, line_gap=4)
         ay += 2
 
-    # ── 5. ROW 2: 3 info boxes (بدون Avoid) ──────────────────────────────────
+    # ROW 2: 3 boxes (Specimen + Date, Microscopic, First-line)
     R2_Y1, R2_Y2 = 205, 300
-    r2w = (W - 2 * PAD - 2 * GAP) // 3   # 3 boxes now
+    r2w = (W - 2 * PAD - 2 * GAP) // 3
 
-    # Box 1: Specimen + Date In
     spec_items = [specimen]
     if date_in:
         spec_items.append(f"Date In: {date_in}")
 
-    # Box 2: Microscopic Examination
-    micro_items = [
-        f"Pus cells: {pus_cells}/HPF",
-        f"RBCs: {rbcs}/HPF",
-    ]
+    # Microscopic examination – نصوص حرة
+    micro_items = []
+    if pus_cells:
+        micro_items.append(f"Pus cells: {pus_cells}/HPF")
+    else:
+        micro_items.append("Pus cells: —/HPF")
+    if rbcs:
+        micro_items.append(f"RBC cells: {rbcs}/HPF")
+    else:
+        micro_items.append("RBC cells: —/HPF")
 
-    # Box 3: First-line options
     fl_items = first_line[:4] or ["—"]
 
     r2_data = [
@@ -965,7 +966,7 @@ def generate_decision_tree_image(
         for it in items[:4]:
             iy = _draw_text_wrap(draw, bx1 + 14, iy, f"• {it}", F_SMALL, DARK, bx2 - bx1 - 24, line_gap=4)
 
-    # ── 6. FOUR MAIN COLUMNS ──────────────────────────────────────────────────
+    # FOUR MAIN COLUMNS
     COL_Y1 = 312
     COL_Y2 = H - 115
     cw     = (W - 2 * PAD - 3 * GAP) // 4
@@ -986,12 +987,11 @@ def generate_decision_tree_image(
             bg, bd, F_TITLE, F_SMALL, F_TEXT,
         )
 
-    # ── 7. FOOTER: 3 boxes ───────────────────────────────────────────────────
+    # FOOTER
     FY1 = H - 107
     FY2 = H - 8
     fw  = (W - 2 * PAD - 2 * GAP) // 3
 
-    # WHO AWaRe
     fx1 = PAD;         fx2 = fx1 + fw
     _draw_rbox(draw, (fx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
     draw.text((fx1 + 12, FY1 + 10), "WHO AWaRe CLASSIFICATION", fill=DARK, font=F_SUBTITL)
@@ -1002,15 +1002,13 @@ def generate_decision_tree_image(
             lw = draw.textlength(label, font=F_TEXT) + 16
         except Exception:
             lw = 70
-        fx1_offset = fx1 + 12
         draw.rounded_rectangle(
-            (fx1_offset - 4, wy - 2, fx1_offset + lw, wy + (F_TEXT.size if hasattr(F_TEXT, "size") else 12) + 2),
+            (fx1 + 12 - 4, wy - 2, fx1 + 12 + lw, wy + (F_TEXT.size if hasattr(F_TEXT, "size") else 12) + 2),
             radius=5, outline=color, width=1
         )
         wy += (F_TEXT.size if hasattr(F_TEXT, "size") else 12) + 6
     draw.text((fx1 + 12, FY2 - 16), "First/second | Caution | Last resort", fill=GRAY, font=F_SMALL)
 
-    # SUMMARY
     fx1 = PAD + fw + GAP;  fx2 = fx1 + fw
     _draw_rbox(draw, (fx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
     draw.text((fx1 + 12, FY1 + 10), "📊  SUMMARY", fill=DARK, font=F_SUBTITL)
@@ -1026,7 +1024,6 @@ def generate_decision_tree_image(
         draw.text((sx, FY1 + 32), num, fill=clr, font=F_SUMNUM)
         draw.text((sx, FY1 + 62), lbl, fill=GRAY, font=F_SMALL)
 
-    # NOTES
     fx1 = PAD + 2 * (fw + GAP);  fx2 = W - PAD
     _draw_rbox(draw, (fx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
     draw.text((fx1 + 12, FY1 + 10), "📋  NOTES", fill=DARK, font=F_SUBTITL)
@@ -1034,7 +1031,6 @@ def generate_decision_tree_image(
     for note in (notes or [])[:4]:
         ny = _draw_text_wrap(draw, fx1 + 12, ny, f"• {note}", F_SMALL, DARK, fx2 - fx1 - 22, line_gap=4)
 
-    # Branding
     draw.text(
         (PAD, H - 6),
         "Developed by Dr / Hussein Ali | Orange Lab  |  EUCAST 2026 | CLSI M100 2026 | IDSA AMR 2025 | Egypt National Guidelines",
@@ -1046,7 +1042,7 @@ def generate_decision_tree_image(
     return buf.getvalue()
 
 # =========================================================
-# التقرير النصي
+# التقرير النصي (بدون تغيير عن السابق)
 # =========================================================
 def generate_report(
     patient_name: str,
@@ -1214,7 +1210,7 @@ def generate_report(
     return "\n".join(lines)
 
 # =========================================================
-# واجهة التطبيق الرئيسية
+# واجهة التطبيق الرئيسية (مع حقول النص الجديدة)
 # =========================================================
 if not st.session_state.authenticated:
     email_input = show_login_page()
@@ -1285,7 +1281,6 @@ if uploaded:
     with col1:
         st.subheader("👤 Patient & Culture")
 
-        # اسم المريض
         ocr_name = (st.session_state.get("patient_name_ocr") or "").strip()
         if ocr_name:
             st.info(f"📖 الاسم من OCR: **{ocr_name}**")
@@ -1328,7 +1323,7 @@ if uploaded:
             help=f"بكتيريا شائعة في عينة {culture_type}",
         )
 
-        # --- إدخالات جديدة: Colony count, Date In, Microscopic exam ---
+        # --- Colony count, Date In, Microscopic exam (نصوص حرة) ---
         st.divider()
         st.subheader("🔬 Culture & Microscopic Details")
 
@@ -1350,19 +1345,21 @@ if uploaded:
 
         col_pus, col_rbc = st.columns(2)
         with col_pus:
-            pus_cells = st.number_input(
-                "Pus Cells (/HPF)", min_value=0, max_value=100,
-                value=st.session_state.pus_cells, step=1,
-                key="pus_cells_input"
+            pus_cells_text = st.text_input(
+                "Pus Cells (/HPF)",
+                value=st.session_state.pus_cells_text,
+                placeholder="مثال: 4 - 6",
+                key="pus_cells_text"
             )
-            st.session_state.pus_cells = pus_cells
+            st.session_state.pus_cells_text = pus_cells_text
         with col_rbc:
-            rbcs = st.number_input(
-                "RBCs (/HPF)", min_value=0, max_value=100,
-                value=st.session_state.rbcs, step=1,
-                key="rbcs_input"
+            rbcs_text = st.text_input(
+                "RBC Cells (/HPF)",
+                value=st.session_state.rbcs_text,
+                placeholder="مثال: 2 - 4",
+                key="rbcs_text"
             )
-            st.session_state.rbcs = rbcs
+            st.session_state.rbcs_text = rbcs_text
 
         # Organism guidance
         if organism_type in ORGANISM_PROFILE:
@@ -1423,7 +1420,6 @@ if uploaded:
     with col2:
         st.subheader("💊 Antibiotic Analysis")
 
-        # ── تعديل SIR ──────────────────────────────────────────────────────
         ocr_sir_map = payload["sir_map"]
         if ocr_sir_map:
             st.markdown("**📊 نتائج المزرعة — S / I / R** *(عدّل أي قيمة خطأ)*")
@@ -1546,7 +1542,6 @@ if uploaded:
         if final_drugs:
             st.divider()
 
-            # بناء قوائم الصورة
             reserve_names = uniq_keep_order([
                 item['name'] for item in (allowed + warned)
                 if item.get("aware") == "Reserve"
@@ -1559,7 +1554,6 @@ if uploaded:
                 item['name'] for item in warned
                 if item['name'] not in reserve_names
             ]
-            # ضم أدوية الحمل الحذرة إلى قائمة التحذير
             preg_caution_names = [item['name'] for item in preg_warn_items]
             use_caution_names = uniq_keep_order(warned_names + preg_caution_names)
 
@@ -1567,7 +1561,7 @@ if uploaded:
 
             org_profile   = ORGANISM_PROFILE.get(organism_type, {})
             first_line_l  = org_profile.get("first_line", [])
-            avoid_l       = org_profile.get("avoid", [])  # سيتم تجاهله في الصورة
+            avoid_l       = org_profile.get("avoid", [])
 
             notes: List[str] = []
             if is_renal:
@@ -1583,7 +1577,7 @@ if uploaded:
             notes.append("Treatment guided by severity and local resistance patterns.")
             notes.append("De-escalate based on culture & sensitivity.")
 
-            # ── التقرير النصي (غير قابل للتعديل الآن) ───────────────────────
+            # ── تقرير نصي غير قابل للتعديل ──────────────────────────────────
             st.markdown("### 📋 التقرير السريري")
             st.caption("النص النهائي — حمل الملف للتعديل الخارجي")
 
@@ -1597,7 +1591,6 @@ if uploaded:
                 organism=organism_type, specimen=culture_type,
                 interactions=interactions_alerts, sir_map=sir_map,
             )
-            # عرض التقرير كنص ثابت
             st.text_area(
                 "نص التقرير (للقراءة فقط)",
                 value=auto_report,
@@ -1605,7 +1598,6 @@ if uploaded:
                 disabled=True,
                 label_visibility="collapsed"
             )
-            # زر التحميل فقط
             st.download_button(
                 "📥 تنزيل التقرير (TXT)",
                 data=auto_report,
@@ -1628,7 +1620,7 @@ if uploaded:
                             cl_cr=cl_cr, is_renal=is_renal, is_preg=is_preg,
                             organism=organism_type, specimen=culture_type,
                             first_line=first_line_l,
-                            avoid=avoid_l,   # لا يُستخدم حالياً
+                            avoid=avoid_l,
                             preferred=preferred_names,
                             use_caution=use_caution_names,
                             contraindicated=banned_names,
@@ -1636,8 +1628,8 @@ if uploaded:
                             notes=notes,
                             colony_count=st.session_state.colony_count,
                             date_in=str(st.session_state.date_in),
-                            pus_cells=st.session_state.pus_cells,
-                            rbcs=st.session_state.rbcs,
+                            pus_cells=st.session_state.pus_cells_text,   # نص
+                            rbcs=st.session_state.rbcs_text,             # نص
                         )
                         img_ok = True
                     except Exception as e:
