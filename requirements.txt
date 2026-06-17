@@ -6,3 +6,4 @@ Pillow
 fpdf
 pandas
 scikit-learn
+reportlab
