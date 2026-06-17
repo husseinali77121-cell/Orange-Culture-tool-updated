@@ -1449,41 +1449,30 @@ if startup_issues:
 st.title("🛡️ Orange Culture Tool")
 st.caption("AI-Assisted Antibiotic Decision Support — Egyptian Market Edition")
 
-# ── Sidebar: إعدادات المعمل ───────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("### ⚙️ إعدادات المعمل")
-    st.caption("هذه الإعدادات تظهر في الصورة والتقرير")
-
-    lab_name_input = st.text_input(
-        "🏥 اسم المعمل",
-        value=st.session_state.get("lab_name", "Orange Lab"),
-        placeholder="أدخل اسم المعمل",
-        key="lab_name_widget"
-    )
-    st.session_state.lab_name = lab_name_input.strip() or "Orange Lab"
-
-    lab_city_input = st.text_input(
-        "📍 المدينة / الجهة",
-        value=st.session_state.get("lab_city", "6 October City, Egypt"),
-        placeholder="المدينة أو اسم المستشفى",
-        key="lab_city_widget"
-    )
-    st.session_state.lab_city = lab_city_input.strip()
-
-    st.divider()
-    st.markdown("**معاينة ترويسة الصورة:**")
-    st.info(f"🔬 {st.session_state.lab_name} – CLINICAL DECISION TREE")
+# ── إعدادات المعمل — expander ثابت دائماً مرئي ──────────────────────────
+with st.expander("🏥 إعدادات المعمل", expanded=False):
+    lc1, lc2 = st.columns(2)
+    with lc1:
+        lab_name_input = st.text_input(
+            "اسم المعمل / المستشفى",
+            value=st.session_state.get("lab_name", "Orange Lab"),
+            placeholder="مثال: Orange Lab",
+            key="lab_name_widget"
+        )
+        st.session_state.lab_name = lab_name_input.strip() or "Orange Lab"
+    with lc2:
+        lab_city_input = st.text_input(
+            "المدينة / الجهة (اختياري)",
+            value=st.session_state.get("lab_city", ""),
+            placeholder="مثال: 6 October City",
+            key="lab_city_widget"
+        )
+        st.session_state.lab_city = lab_city_input.strip()
+    # معاينة فورية
+    preview_txt = f"🔬  {st.session_state.lab_name}"
     if st.session_state.lab_city:
-        st.caption(f"📍 {st.session_state.lab_city}")
-
-    st.divider()
-    st.markdown("""
-    <div style='font-size:0.75rem;color:gray'>
-    Developed by Dr / Hussein Ali<br>
-    EUCAST 2026 | CLSI M100 2026<br>
-    IDSA AMR 2025 | Egypt National
-    </div>
-    """, unsafe_allow_html=True)
+        preview_txt += f"  |  {st.session_state.lab_city}"
+    st.caption(f"معاينة الترويسة: **{preview_txt}**")
 
 uploaded = st.file_uploader(
     "📷 Upload Culture Report Image",
