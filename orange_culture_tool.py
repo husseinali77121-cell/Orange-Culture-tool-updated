@@ -810,14 +810,14 @@ def generate_decision_tree_image(
         raise RuntimeError("Pillow غير متاح — أضف Pillow لـ requirements.txt")
 
     # ── Scale & Canvas ────────────────────────────────────────────────────────
-    # A4 landscape @ 200 DPI with 5mm margins = 2259×1506 px
-    # We use W=2480, H=1654 (exact A4 @ 200 DPI = 297mm×210mm)
-    # Scale factor relative to base 1264×843
-    S  = 2                       # 2× → A4 200 DPI print quality
-    W  = 2480                    # A4 landscape @ 200 DPI (297mm)
-    H  = 1654                    # A4 landscape @ 200 DPI (210mm)
-    P  = 16   * S                # padding
-    G  = 10   * S                # gap
+    # A4 landscape = 297mm × 210mm  @ 200 DPI = 2339 × 1654 px
+    # نطرح 10mm من كل جهة → 277mm × 190mm = 2181 × 1496 px
+    # أصغر من A4 بـ ~20mm → يُطبع بدون قص
+    S  = 2                       # 2× scale → جودة طباعة جيدة
+    W  = 2181                    # 277mm @ 200 DPI  (أصغر من A4 بـ 20mm)
+    H  = 1496                    # 190mm @ 200 DPI  (أصغر من A4 بـ 20mm)
+    P  = 14   * S                # padding
+    G  = 8    * S                # gap
 
     # ── Color Palette (identical to reference) ────────────────────────────────
     BG         = (248, 250, 252)
@@ -892,6 +892,9 @@ def generate_decision_tree_image(
             y += lh
         return y
 
+    # AWaRe badge colors for preferred column
+    BADGE_COLORS = {"[A]": (20, 138, 68), "[W]": (195, 140, 30)}
+
     def section_box(draw, box, title, title_color, subtitle, items, bg, bd,
                     ft, fs, fi):
         x1, y1, x2, y2 = box
@@ -906,14 +909,36 @@ def generate_decision_tree_image(
         # Divider
         draw.line([(x1 + 10*S, cy), (x2 - 10*S, cy)], fill=bd, width=1*S)
         cy += 8*S
-        # Items
+        # Items — with optional AWaRe badge for preferred
         for item in items:
             ih = fh(fi) + 7*S
             if cy + ih > y2 - 8*S:
                 draw.text((x1 + 14*S, cy), "…", fill=LIGHT_GRAY, font=fi)
                 break
-            cy = text_wrap(draw, x1 + 14*S, cy, f"• {item}",
+            # Check for badge suffix [A] or [W]
+            badge = ""
+            display_name = item
+            for b in ["[A]", "[W]"]:
+                if item.endswith(b):
+                    badge = b
+                    display_name = item[:-len(b)].rstrip()
+                    break
+            cy = text_wrap(draw, x1 + 14*S, cy, f"• {display_name}",
                            fi, DARK, x2 - x1 - 26*S, gap=5)
+            # Draw badge pill inline after text
+            if badge:
+                badge_clr = BADGE_COLORS.get(badge, DARK)
+                badge_lbl = "ACCESS" if badge == "[A]" else "WATCH"
+                blw = tw(draw, badge_lbl, fs)
+                bx  = x1 + 22*S
+                # small colored rectangle
+                draw.rounded_rectangle(
+                    (bx, cy - fh(fs) - 3*S, bx + blw + 8*S, cy - 1*S),
+                    radius=3*S, fill=badge_clr
+                )
+                draw.text((bx + 4*S, cy - fh(fs) - 1*S), badge_lbl,
+                          fill=WHITE, font=fs)
+                cy += 2*S
 
     # ── Build Image ───────────────────────────────────────────────────────────
     img  = Image.new("RGB", (W, H), BG)
@@ -1763,9 +1788,17 @@ if uploaded:
                 item['name'] for item in (allowed + warned)
                 if item.get("aware") == "Reserve"
             ])
-            preferred_names = [
-                item['name'] for item in allowed
-                if item.get("aware") != "Reserve"
+            # ترتيب: Access أولاً ثم Watch (بدون Reserve)
+            AWARE_ORDER = {"Access": 0, "Watch": 1, "Reserve": 2, None: 3}
+            preferred_sorted = sorted(
+                [item for item in allowed if item.get("aware") != "Reserve"],
+                key=lambda x: AWARE_ORDER.get(x.get("aware"), 3)
+            )
+            preferred_names = [item['name'] for item in preferred_sorted]
+            # للصورة: نضيف badge [A] أو [W] بجانب الاسم
+            preferred_with_badge = [
+                f"{item['name']} [{'A' if item.get('aware')=='Access' else 'W' if item.get('aware')=='Watch' else ''}]".rstrip(" []")
+                for item in preferred_sorted
             ]
             # النقطة ٣: use_caution يشمل warned + preg_warn
             preg_caution_names = [item['name'] for item in preg_warn_items]
@@ -1793,7 +1826,7 @@ if uploaded:
 
             # ── النقطة ١: التقرير النصي — عرض للقراءة فقط، التعديل في الـ TXT ──
             st.markdown("### 📋 التقرير السريري")
-            st.caption("النص النهائي — حمّل الملف لتعديله خارجياً إن أردت")
+            st.caption("يتحدث فوراً مع كل تغيير في البيانات — حمّل TXT للحفظ")
 
             # النقطة ٢: الاسم يُمرَّر مباشرة من قيمة الـ widget الحالية
             auto_report = generate_report(
@@ -1813,14 +1846,14 @@ if uploaded:
                 lab_city=st.session_state.get("lab_city", ""),
             )
 
-            # النقطة ١: disabled=True — قابل للقراءة فقط
+            # التقرير يتحدث مع كل تغيير في المدخلات — live preview
             st.text_area(
                 "نص التقرير",
                 value=auto_report,
                 height=400,
                 disabled=True,
                 label_visibility="collapsed",
-                key=f"report_preview_{file_hash[:8]}"
+                key=f"report_preview_{file_hash[:8]}_{hash(auto_report) & 0xFFFFFF}"
             )
             st.download_button(
                 "📥 تنزيل التقرير (TXT)",
@@ -1846,7 +1879,7 @@ if uploaded:
                         cl_cr=cl_cr, is_renal=is_renal, is_preg=is_preg,
                         organism=organism_type, specimen=culture_type,
                         first_line=first_line_l,
-                        preferred=preferred_names,
+                        preferred=preferred_with_badge,
                         use_caution=use_caution_names,
                         contraindicated=banned_names,
                         reserve=reserve_names,
@@ -1871,24 +1904,27 @@ if uploaded:
                             use_container_width=True,
                         )
                     with pr_col:
-                        # زر الطباعة عبر HTML/JavaScript
-                        import base64
-                        b64 = base64.b64encode(img_bytes).decode()
-                        print_html = f"""
-<button onclick="
-  var w=window.open('');
-  w.document.write('<html><body style=margin:0><img src=\'data:image/png;base64,{b64}\' style=\'width:100vw;height:auto\'></body></html>');
-  w.document.close();
-  w.focus();
-  setTimeout(function(){{w.print();w.close();}},500);
-" style="
-  width:100%;padding:0.5rem 1rem;
-  background:#1B4F9E;color:white;
-  border:none;border-radius:8px;
-  font-size:1rem;cursor:pointer;
-  font-weight:600;
-">🖨️ طباعة مباشرة</button>"""
+                        # زر الطباعة: يفتح الصورة في tab جديد → Ctrl+P للطباعة
+                        import base64 as _b64
+                        b64 = _b64.b64encode(img_bytes).decode()
+                        # نستخدم <a> بدل button لأن Streamlit يحجب onclick
+                        print_html = f"""<a
+  href="data:image/png;base64,{b64}"
+  target="_blank"
+  style="
+    display:block;
+    text-align:center;
+    padding:0.45rem 1rem;
+    background:#1B4F9E;
+    color:white;
+    border-radius:8px;
+    font-size:0.95rem;
+    font-weight:600;
+    text-decoration:none;
+    line-height:2;
+  ">🖨️ فتح للطباعة (Ctrl+P)</a>"""
                         st.markdown(print_html, unsafe_allow_html=True)
+                        st.caption("افتح الرابط ← Ctrl+P أو ⌘+P للطباعة")
                 except Exception as e:
                     st.error(f"فشل توليد الصورة: {e}")
             else:
