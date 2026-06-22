@@ -7,3 +7,6 @@ fpdf
 pandas
 scikit-learn
 reportlab
+weasyprint
+arabic-reshaper
+python-bidi
