@@ -3338,7 +3338,7 @@ AWARE_NAME_COLORS = {
     "[W]": (180, 100,  0),   # برتقالي — Watch
 }
     # ── Fonts (all scaled) ────────────────────────────────────────────────────
-    def gf(size: int, bold: bool = False):
+        def gf(size: int, bold: bool = False):
         import os as _os
         _b = "Bold" if bold else "Regular"
         paths = [
