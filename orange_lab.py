@@ -3296,17 +3296,25 @@ def generate_decision_tree_image(
     if not PIL_AVAILABLE:
         raise RuntimeError("Pillow غير متاح — أضف Pillow لـ requirements.txt")
 
-    # ── Scale & Canvas ────────────────────────────────────────────────────────
-    # A4 landscape = 297mm × 210mm  @ 200 DPI = 2339 × 1654 px
-    # نطرح 10mm من كل جهة → 277mm × 190mm = 2181 × 1496 px
-    # أصغر من A4 بـ ~20mm → يُطبع بدون قص
-    S  = 2                       # 2× scale → جودة طباعة جيدة
-    W  = 2181                    # 277mm @ 200 DPI  (أصغر من A4 بـ 20mm)
-    H  = 1496                    # 190mm @ 200 DPI  (أصغر من A4 بـ 20mm)
-    P  = 14   * S                # padding
-    G  = 8    * S                # gap
+    # ── إضافة دالة إعادة تشكيل النص العربي ──────────────────────────────────
+    def _fix_arabic(text: str) -> str:
+        """إعادة تشكيل النص العربي ليعمل مع Pillow"""
+        if not text or not ARABIC_SUPPORT:
+            return text
+        try:
+            reshaped = arabic_reshaper.reshape(str(text))
+            return get_display(reshaped)
+        except Exception:
+            return str(text)
 
-    # ── Color Palette (identical to reference) ────────────────────────────────
+    # ── Scale & Canvas ────────────────────────────────────────────────────────
+    S  = 2
+    W  = 2181
+    H  = 1496
+    P  = 14   * S
+    G  = 8    * S
+
+    # ── Color Palette ────────────────────────────────────────────────────────
     BG         = (248, 250, 252)
     WHITE      = (255, 255, 255)
     DARK       = (28,  32,  40)
@@ -3327,33 +3335,22 @@ def generate_decision_tree_image(
 
     # ── Fonts (all scaled) ────────────────────────────────────────────────────
     def gf(size: int, bold: bool = False):
-        """
-        Robust font loader with comprehensive fallbacks.
-        Priority: Liberation Sans → DejaVu → NotoSans → Amiri → auto-discover
-        Liberation/DejaVu give the clean sans-serif look of the old images.
-        NotoSans/Amiri are fallbacks for Streamlit Cloud if Liberation not found.
-        """
         import os as _os
         _b = "Bold" if bold else "Regular"
         paths = [
-            # ── Liberation Sans (fonts-liberation in packages.txt) ──────────────
             f"/usr/share/fonts/truetype/liberation/LiberationSans-{_b}.ttf",
             f"/usr/share/fonts/truetype/liberation2/LiberationSans-{_b}.ttf",
             f"/usr/share/fonts/liberation/LiberationSans-{_b}.ttf",
-            # ── DejaVu Sans (fonts-dejavu-core in packages.txt) ─────────────────
             f"/usr/share/fonts/truetype/dejavu/DejaVuSans{'-Bold' if bold else ''}.ttf",
             f"/usr/share/fonts/dejavu/DejaVuSans{'-Bold' if bold else ''}.ttf",
             f"/usr/share/fonts/truetype/dejavu-sans/DejaVuSans{'-Bold' if bold else ''}.ttf",
-            # ── Noto Sans (fonts-noto-core in packages.txt) — clean sans-serif ──
             f"/usr/share/fonts/truetype/noto/NotoSans-{_b}.ttf",
             f"/usr/share/fonts/truetype/noto/NotoSans{'Bold' if bold else 'Regular'}.ttf",
             "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
             "/usr/share/fonts/noto/NotoSans-Regular.ttf",
-            # ── Amiri (fonts-hosny-amiri in packages.txt) — Arabic+Latin ────────
             f"/usr/share/fonts/opentype/fonts-hosny-amiri/Amiri-{_b}.ttf",
             f"/usr/share/fonts/opentype/fonts-hosny-amiri/amiri-{'bold' if bold else 'regular'}.ttf",
             f"/usr/share/fonts/truetype/amiri/Amiri-{_b}.ttf",
-            # ── Other common fonts ───────────────────────────────────────────────
             f"/usr/share/fonts/truetype/freefont/FreeSans{'Bold' if bold else ''}.ttf",
             f"/usr/share/fonts/truetype/ubuntu/Ubuntu-{'B' if bold else 'R'}.ttf",
         ]
@@ -3363,27 +3360,17 @@ def generate_decision_tree_image(
                     return ImageFont.truetype(p, size * S)
                 except Exception:
                     continue
-        # Auto-discover: search for ANY usable sans-serif font
-        for _fdir in ["/usr/share/fonts/truetype", "/usr/share/fonts/opentype",
-                      "/usr/share/fonts"]:
-            if not _os.path.isdir(_fdir):
-                continue
+        for _fdir in ["/usr/share/fonts/truetype", "/usr/share/fonts/opentype", "/usr/share/fonts"]:
+            if not _os.path.isdir(_fdir): continue
             try:
                 for _root, _, _files in _os.walk(_fdir):
-                    for _f in sorted(_files):   # sorted = deterministic order
-                        if not _f.lower().endswith((".ttf", ".otf")):
-                            continue
+                    for _f in sorted(_files):
+                        if not _f.lower().endswith((".ttf", ".otf")): continue
                         _fl = _f.lower()
-                        if any(k in _fl for k in
-                               ("liberation", "dejavu", "notosans", "noto-sans",
-                                "ubuntu", "freesans", "amiri", "arial", "sans")):
-                            try:
-                                return ImageFont.truetype(
-                                    _os.path.join(_root, _f), size * S)
-                            except Exception:
-                                continue
-            except Exception:
-                continue
+                        if any(k in _fl for k in ("liberation", "dejavu", "notosans", "noto-sans", "ubuntu", "freesans", "amiri", "arial", "sans")):
+                            try: return ImageFont.truetype(_os.path.join(_root, _f), size * S)
+                            except Exception: continue
+            except Exception: continue
         return ImageFont.load_default()
 
     F_HEADER  = gf(20, True)
@@ -3395,22 +3382,17 @@ def generate_decision_tree_image(
     F_SUMNUM  = gf(20, True)
     F_BADGE   = gf(9,  True)
 
-    def fh(f) -> int:
-        return f.size if hasattr(f, "size") else 14 * S
-
+    def fh(f) -> int: return f.size if hasattr(f, "size") else 14 * S
     def tw(draw, text, font) -> float:
-        try:
-            return draw.textlength(text, font=font)
-        except Exception:
-            return len(text) * fh(font) * 0.6
+        try: return draw.textlength(text, font=font)
+        except Exception: return len(text) * fh(font) * 0.6
 
     def rbox(draw, box, bg, bd, radius=14, width=3):
-        draw.rounded_rectangle(
-            [box[0], box[1], box[2], box[3]],
-            radius=radius * S, fill=bg, outline=bd, width=width * S
-        )
+        draw.rounded_rectangle([box[0], box[1], box[2], box[3]], radius=radius * S, fill=bg, outline=bd, width=width * S)
 
+    # 👇 دالة text_wrap تم تعديلها لتدعم العربية
     def text_wrap(draw, x, y, text, font, fill, max_w, gap=4):
+        text = _fix_arabic(text)  # ✅ إضافة إعادة التشكيل هنا
         words = text.split()
         lines, cur = [], ""
         for w in words:
@@ -3427,20 +3409,13 @@ def generate_decision_tree_image(
             y += lh
         return y
 
-    # AWaRe colors — Access أخضر، Watch برتقالي
-    AWARE_NAME_COLORS = {
-        "[A]": (20, 138, 68),    # أخضر — Access
-        "[W]": (180, 100,  0),   # برتقالي — Watch
-    }
-
-    def section_box(draw, box, title, title_color, subtitle, items, bg, bd,
-                    ft, fs, fi):
+    def section_box(draw, box, title, title_color, subtitle, items, bg, bd, ft, fs, fi):
         x1, y1, x2, y2 = box
         rbox(draw, box, bg, bd, radius=16, width=3)
-        draw.text((x1 + 14*S, y1 + 12*S), title, fill=title_color, font=ft)
+        draw.text((x1 + 14*S, y1 + 12*S), _fix_arabic(title), fill=title_color, font=ft) # ✅ تعديل
         cy = y1 + 12*S + fh(ft) + 6*S
         if subtitle:
-            draw.text((x1 + 14*S, cy), subtitle, fill=(110,115,125), font=fs)
+            draw.text((x1 + 14*S, cy), _fix_arabic(subtitle), fill=(110,115,125), font=fs) # ✅ تعديل
             cy += fh(fs) + 4*S
         draw.line([(x1 + 10*S, cy), (x2 - 10*S, cy)], fill=bd, width=1*S)
         cy += 8*S
@@ -3448,18 +3423,12 @@ def generate_decision_tree_image(
             if cy + fh(fi) + 7*S > y2 - 8*S:
                 draw.text((x1 + 14*S, cy), "…", fill=LIGHT_GRAY, font=fi)
                 break
-            # استخراج badge [A] أو [W]
             badge = ""
             display_name = item
             for b in ["[A]", "[W]"]:
-                if item.endswith(b):
-                    badge = b
-                    display_name = item[:-len(b)].rstrip()
-                    break
-            # لون الاسم حسب AWaRe
+                if item.endswith(b): badge = b; display_name = item[:-len(b)].rstrip(); break
             name_color = AWARE_NAME_COLORS.get(badge, DARK)
-            cy = text_wrap(draw, x1 + 14*S, cy, f"• {display_name}",
-                           fi, name_color, x2 - x1 - 26*S, gap=5)
+            cy = text_wrap(draw, x1 + 14*S, cy, f"• {display_name}", fi, name_color, x2 - x1 - 26*S, gap=5)
 
     # ── Build Image ───────────────────────────────────────────────────────────
     img  = Image.new("RGB", (W, H), BG)
@@ -3468,272 +3437,184 @@ def generate_decision_tree_image(
     # ── 1. HEADER ─────────────────────────────────────────────────────────────
     rbox(draw, (P, 6*S, W-P, 62*S), NAVY, NAVY, radius=12, width=1)
     htxt = f"🔬  {lab_name.upper()} – MICROBIOLOGY DEPARTMENT"
-    hw   = tw(draw, htxt, F_HEADER)
-    draw.text(((W - hw)//2, 16*S), htxt, fill=WHITE, font=F_HEADER)
+    # ✅ تعديل رسم العنوان
+    draw.text(((W - tw(draw, htxt, F_HEADER))//2, 16*S), _fix_arabic(htxt), fill=WHITE, font=F_HEADER)
 
     # ── 2. CULTURE BOX (center) ───────────────────────────────────────────────
     CB = (368*S, 72*S, 870*S, 198*S)
     rbox(draw, CB, WHITE, NAVY, radius=14, width=2)
 
     ctype = "CULTURE GROWTH"
-    ctw_  = tw(draw, ctype, F_SUBTITL)
-    draw.text(((CB[0]+CB[2]-ctw_)//2, CB[1]+12*S), ctype, fill=DARK, font=F_SUBTITL)
+    # ✅ تعديل رسم النص
+    draw.text(((CB[0]+CB[2]-tw(draw, ctype, F_SUBTITL))//2, CB[1]+12*S), _fix_arabic(ctype), fill=DARK, font=F_SUBTITL)
 
     ow = tw(draw, organism, F_ORG)
-    draw.text(((CB[0]+CB[2]-ow)//2, CB[1]+38*S), organism, fill=NAVY, font=F_ORG)
+    draw.text(((CB[0]+CB[2]-ow)//2, CB[1]+38*S), _fix_arabic(organism), fill=NAVY, font=F_ORG) # ✅ تعديل
 
-    # Colony count under organism — Date In inline
     cc_parts = []
-    if colony_count:
-        cc_parts.append(f"Colony Count: {colony_count}")
-    if date_in:
-        cc_parts.append(f"Date In: {date_in}")
+    if colony_count: cc_parts.append(f"Colony Count: {colony_count}")
+    if date_in: cc_parts.append(f"Date In: {date_in}")
     if cc_parts:
         cc_txt = "   |   ".join(cc_parts)
-        cctw   = tw(draw, cc_txt, F_TEXT)
-        draw.text(((CB[0]+CB[2]-cctw)//2, CB[1]+38*S+fh(F_ORG)+6*S),
-                  cc_txt, fill=(90, 90, 140), font=F_TEXT)
+        draw.text(((CB[0]+CB[2]-tw(draw, cc_txt, F_TEXT))//2, CB[1]+38*S+fh(F_ORG)+6*S), _fix_arabic(cc_txt), fill=(90, 90, 140), font=F_TEXT) # ✅ تعديل
 
     # ── 3. PATIENT BOX (left) ─────────────────────────────────────────────────
     PB = (P, 72*S, 358*S, 198*S)
     rbox(draw, PB, PURPLE_BG, PURPLE_BD, radius=14, width=3)
-    # No "PATIENT DETAILS" header — direct fields
     p_lines = []
-    if patient_name:
-        p_lines.append(f"Patient Name:  {patient_name}")
+    if patient_name: p_lines.append(f"Patient Name:  {patient_name}")
     p_lines.append(f"Sex / Age:     {'Male' if sex == 'Male' else 'Female'}, {age} yrs")
-    if referring_physician:
-        p_lines.append(f"Referred by:   Dr/ {referring_physician}")
-    if is_renal:
-        p_lines.append(f"Renal:         IMPAIRED  CrCl:{cl_cr:.0f}")
-    else:
-        p_lines.append("Renal:         Normal")
+    if referring_physician: p_lines.append(f"Referred by:   Dr/ {referring_physician}")
+    if is_renal: p_lines.append(f"Renal:         IMPAIRED  CrCl:{cl_cr:.0f}")
+    else: p_lines.append("Renal:         Normal")
     p_lines.append("Hepatic:       Normal")
-    if sex == "Female" and 12 <= age <= 55:
-        p_lines.append(f"Pregnancy:     {'Yes' if is_preg else 'No'}")
+    if sex == "Female" and 12 <= age <= 55: p_lines.append(f"Pregnancy:     {'Yes' if is_preg else 'No'}")
 
     py = 78*S
     for ln in p_lines[:7]:
-        draw.text((P+14*S, py), f"• {ln}", fill=DARK, font=F_TEXT)
+        draw.text((P+14*S, py), _fix_arabic(f"• {ln}"), fill=DARK, font=F_TEXT) # ✅ تعديل
         py += fh(F_TEXT) + 5*S
 
-    # ── 4. ALERT BOX (right) — يشمل MDR/ESBL/Phenotype ──────────────────────
+    # ── 4. ALERT BOX (right) ──────────────────────────────────────────────────
     AB = (885*S, 72*S, W-P, 198*S)
-
-    # لون المربع حسب خطورة الـ phenotype
     _ph_names   = [p.get("phenotype","") for p in (phenotypes or [])]
     _has_cre    = any(p in _ph_names for p in ["CRE","CRAB","CRPA"])
     _has_mdr    = (mdr_result or {}).get("level") in ("XDR","PDR")
     _esbl_prob  = (esbl_result or {}).get("probability")
     _has_esbl   = _esbl_prob in ("high","carbapenemase")
 
-    if _has_cre or _has_mdr:
-        AB_BG = (255, 237, 234);  AB_BD = (183, 52, 52);   AB_TXT = (148, 30, 30)
-    elif _has_esbl:
-        AB_BG = (255, 248, 232);  AB_BD = (205,115, 50);   AB_TXT = (130, 60,  5)
-    else:
-        AB_BG = ALERT_BG;         AB_BD = ALERT_BD;         AB_TXT = ALERT_TXT
+    if _has_cre or _has_mdr: AB_BG = (255, 237, 234); AB_BD = (183, 52, 52); AB_TXT = (148, 30, 30)
+    elif _has_esbl: AB_BG = (255, 248, 232); AB_BD = (205,115, 50); AB_TXT = (130, 60, 5)
+    else: AB_BG = ALERT_BG; AB_BD = ALERT_BD; AB_TXT = ALERT_TXT
 
     rbox(draw, AB, AB_BG, AB_BD, radius=14, width=3)
 
-    # عنوان ديناميكي
-    if _has_cre:
-        alert_title = "🚨 CRE / XDR ALERT"
-    elif _has_mdr:
-        alert_title = "🔴 MDR/XDR ALERT"
-    elif _has_esbl:
-        alert_title = "⚠  ESBL ALERT"
-    else:
-        alert_title = "⚠  IMPORTANT ALERT"
+    if _has_cre: alert_title = "🚨 CRE / XDR ALERT"
+    elif _has_mdr: alert_title = "🔴 MDR/XDR ALERT"
+    elif _has_esbl: alert_title = "⚠  ESBL ALERT"
+    else: alert_title = "⚠  IMPORTANT ALERT"
 
-    draw.text((AB[0]+12*S, 72*S+12*S), alert_title, fill=AB_TXT, font=F_SUBTITL)
+    # ✅ تعديل رسم العنوان
+    draw.text((AB[0]+12*S, 72*S+12*S), _fix_arabic(alert_title), fill=AB_TXT, font=F_SUBTITL)
+    
     alerts: List[str] = []
-
-    # ── MDR/XDR/PDR ──────────────────────────────────────────────────────────
     mdr_lvl = (mdr_result or {}).get("level")
     if mdr_lvl:
         mdr_cats = (mdr_result or {}).get("resistant_categories", [])
         rc = (mdr_result or {}).get("resistant_count", 0)
         rt = (mdr_result or {}).get("total_tested", 0)
         alerts.append(f"{mdr_lvl}: Resistant {rc}/{rt} categories")
-        if mdr_cats:
-            alerts.append(f"R-cats: {', '.join(mdr_cats[:3])}")
-
-    # ── ESBL / Carbapenemase ──────────────────────────────────────────────────
+        if mdr_cats: alerts.append(f"R-cats: {', '.join(mdr_cats[:3])}")
     if _esbl_prob == "carbapenemase":
-        alerts.append("Carbapenemase (KPC/MBL/OXA) possible!")
-        alerts.append("Send to reference lab immediately.")
+        alerts.append("Carbapenemase (KPC/MBL/OXA) possible!"); alerts.append("Send to reference lab immediately.")
     elif _esbl_prob == "high":
-        alerts.append("High probability ESBL Producer")
-        alerts.append("Use Carbapenems for severe cases")
+        alerts.append("High probability ESBL Producer"); alerts.append("Use Carbapenems for severe cases")
     elif _esbl_prob == "moderate":
-        alerts.append("ESBL confirmation recommended")
-        alerts.append("Double Disk Synergy Test")
-
-    # ── Phenotypes ────────────────────────────────────────────────────────────
+        alerts.append("ESBL confirmation recommended"); alerts.append("Double Disk Synergy Test")
     for ph in (phenotypes or [])[:2]:
         ph_name = ph.get("phenotype","")
-        if ph_name not in ("Possible MRSA",):
-            alerts.append(f"Phenotype: {ph_name}")
-
-    # ── Organism-specific baseline alerts ────────────────────────────────────
+        if ph_name not in ("Possible MRSA",): alerts.append(f"Phenotype: {ph_name}")
     org_l = organism.lower()
-    if not alerts:  # فقط لو مفيش MDR/ESBL
-        if "klebsiella" in org_l:
-            alerts += ["Consider ESBL screening",
-                       "Natural resistance: Ampicillin"]
-        elif "e. coli" in org_l or "coli" in org_l:
-            alerts += ["Most common UTI pathogen",
-                       "Verify with culture sensitivity"]
-        elif "pseudomonas" in org_l:
-            alerts += ["High intrinsic resistance",
-                       "Anti-pseudomonal agent required"]
-        elif "mrsa" in org_l or "staphylococcus" in org_l:
-            alerts += ["Check MRSA status",
-                       "Vancomycin/Linezolid if MRSA"]
-        elif "acinetobacter" in org_l:
-            alerts += ["MDR risk — check Carbapenem S/I/R"]
-        else:
-            alerts = ["Verify sensitivity results."]
-
-    if is_renal:
-        alerts.append(f"Renal adj. (CrCl {cl_cr:.0f} ml/min)")
-    if is_preg and age >= 18:
-        alerts.append("Pregnancy: verify fetal safety")
+    if not alerts:
+        if "klebsiella" in org_l: alerts += ["Consider ESBL screening", "Natural resistance: Ampicillin"]
+        elif "e. coli" in org_l or "coli" in org_l: alerts += ["Most common UTI pathogen", "Verify with culture sensitivity"]
+        elif "pseudomonas" in org_l: alerts += ["High intrinsic resistance", "Anti-pseudomonal agent required"]
+        elif "mrsa" in org_l or "staphylococcus" in org_l: alerts += ["Check MRSA status", "Vancomycin/Linezolid if MRSA"]
+        elif "acinetobacter" in org_l: alerts += ["MDR risk — check Carbapenem S/I/R"]
+        else: alerts = ["Verify sensitivity results."]
+    if is_renal: alerts.append(f"Renal adj. (CrCl {cl_cr:.0f} ml/min)")
+    if is_preg and age >= 18: alerts.append("Pregnancy: verify fetal safety")
 
     ay = 72*S + 12*S + fh(F_SUBTITL) + 8*S
     alert_max_w = AB[2] - AB[0] - 22*S
     for al in alerts[:6]:
-        if ay + fh(F_SMALL) + 4*S > AB[3] - 6*S:
-            break
-        ay = text_wrap(draw, AB[0]+12*S, ay, f"• {al}",
-                       F_SMALL, AB_TXT, alert_max_w, gap=4)
+        if ay + fh(F_SMALL) + 4*S > AB[3] - 6*S: break
+        ay = text_wrap(draw, AB[0]+12*S, ay, f"• {al}", F_SMALL, AB_TXT, alert_max_w, gap=4)
         ay += 2*S
 
-    # ── 5. ROW 2: Specimen | Microscopic Exam | First-Line ────────────────────
-    R2_Y1 = 210*S
-    R2_Y2 = 310*S
+    # ── 5. ROW 2 ──────────────────────────────────────────────────────────────
+    R2_Y1 = 210*S; R2_Y2 = 310*S
     r2w   = (W - 2*P - 2*G) // 3
-
-    # Specimen box — no title, direct fields
-    spec_items = [
-        f"Specimen:      {specimen}",
-        "Method:        Culture & Sensitivity",
-        f"Condition:     {culture_condition}",
-    ]
-    if microbiologist:
-        spec_items.append(f"Microbiologist: Dr/ {microbiologist}")
-    micro_items = [
-        f"Pus Cells: {pus_cells if pus_cells else chr(8212)} /HPF",
-        f"RBCs:      {rbcs if rbcs else chr(8212)} /HPF",
-    ]
+    spec_items = [f"Specimen:      {specimen}", "Method:        Culture & Sensitivity", f"Condition:     {culture_condition}"]
+    if microbiologist: spec_items.append(f"Microbiologist: Dr/ {microbiologist}")
+    micro_items = [f"Pus Cells: {pus_cells if pus_cells else chr(8212)} /HPF", f"RBCs:      {rbcs if rbcs else chr(8212)} /HPF"]
     fl_items = first_line[:4] or ["—"]
-
-    r2_data = [
-        ("",                   spec_items,  SPEC_BD,  SPEC_BG,  ""),
-        ("MICROSCOPIC EXAM",   micro_items, MICRO_BD, MICRO_BG, "🔬"),
-        ("FIRST-LINE OPTIONS", fl_items,    FL_BD,    FL_BG,    "📋"),
-    ]
+    r2_data = [("", spec_items, SPEC_BD, SPEC_BG, ""), ("MICROSCOPIC EXAM", micro_items, MICRO_BD, MICRO_BG, "🔬"), ("FIRST-LINE OPTIONS", fl_items, FL_BD, FL_BG, "📋")]
+    
     for i, (title, items, bd, bg, icon) in enumerate(r2_data):
-        bx1 = P + i*(r2w+G)
-        bx2 = bx1 + r2w
+        bx1 = P + i*(r2w+G); bx2 = bx1 + r2w
         rbox(draw, (bx1, R2_Y1, bx2, R2_Y2), bg, bd, radius=12, width=2)
         if title:
-            draw.text((bx1+12*S, R2_Y1+9*S), f"{icon} {title}", fill=bd, font=F_SUBTITL)
+            draw.text((bx1+12*S, R2_Y1+9*S), _fix_arabic(f"{icon} {title}"), fill=bd, font=F_SUBTITL) # ✅ تعديل
             iy = R2_Y1 + 32*S
-        else:
-            iy = R2_Y1 + 11*S  # start higher when no title
+        else: iy = R2_Y1 + 11*S
         for it in items[:5]:
-            iy = text_wrap(draw, bx1+14*S, iy, f"• {it}",
-                           F_SMALL, DARK, bx2-bx1-24*S, gap=4)
+            iy = text_wrap(draw, bx1+14*S, iy, f"• {it}", F_SMALL, DARK, bx2-bx1-24*S, gap=4)
 
     # ── 6. FOUR MAIN COLUMNS ──────────────────────────────────────────────────
-    COL_Y1 = 323*S
-    COL_Y2 = H - 115*S
-    cw     = (W - 2*P - 3*G) // 4
-
-    # Dynamic column titles based on pregnancy
-    avoid_title    = "🚫 AVOID IN PREGNANCY" if is_preg else "🚫 AVOID / CONTRAINDICT."
+    COL_Y1 = 323*S; COL_Y2 = H - 115*S
+    cw = (W - 2*P - 3*G) // 4
+    avoid_title = "🚫 AVOID IN PREGNANCY" if is_preg else "🚫 AVOID / CONTRAINDICT."
     avoid_subtitle = "Contraindicated / Not recommended" if is_preg else "Due to other factors"
-
     columns = [
-        ("✅ PREFERRED (SAFE)",  "Preferred oral options",  preferred,       GREEN_BD, GREEN_BG, GREEN_TXT),
-        ("⚠️  USE WITH CAUTION", "Use with caution",         use_caution,     AMBER_BD, AMBER_BG, AMBER_TXT),
-        (avoid_title,            avoid_subtitle,             contraindicated,  RED_BD,   RED_BG,   RED_TXT),
-        ("🛡️  RESERVE (SEVERE)", "ESBL / Severe cases only", reserve,          BLUE_BD,  BLUE_BG,  BLUE_TXT),
+        ("✅ PREFERRED (SAFE)", "Preferred oral options", preferred, GREEN_BD, GREEN_BG, GREEN_TXT),
+        ("⚠️  USE WITH CAUTION", "Use with caution", use_caution, AMBER_BD, AMBER_BG, AMBER_TXT),
+        (avoid_title, avoid_subtitle, contraindicated, RED_BD, RED_BG, RED_TXT),
+        ("🛡️  RESERVE (SEVERE)", "ESBL / Severe cases only", reserve, BLUE_BD, BLUE_BG, BLUE_TXT),
     ]
     for i, (title, subtitle, items, bd, bg, tc) in enumerate(columns):
-        bx1 = P + i*(cw+G)
-        bx2 = bx1 + cw
-        section_box(draw, (bx1, COL_Y1, bx2, COL_Y2),
-                    title, tc, subtitle, items or ["—"],
-                    bg, bd, F_TITLE, F_SMALL, F_TEXT)
+        bx1 = P + i*(cw+G); bx2 = bx1 + cw
+        section_box(draw, (bx1, COL_Y1, bx2, COL_Y2), title, tc, subtitle, items or ["—"], bg, bd, F_TITLE, F_SMALL, F_TEXT)
 
-    # ── 7. FOOTER — 4 مربعات متساوية ─────────────────────────────────────────
-    FY1 = H - 116*S
-    FY2 = H - 8*S
-    fw4 = (W - 2*P - 3*G) // 4
+    # ── 7. FOOTER ──────────────────────────────────────────────────────────────
+    FY1 = H - 116*S; FY2 = H - 8*S; fw4 = (W - 2*P - 3*G) // 4
 
     # ① WHO AWaRe
-    fx1 = P;  fx2 = fx1 + fw4
+    fx1 = P; fx2 = fx1 + fw4
     rbox(draw, (fx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
-    draw.text((fx1+10*S, FY1+10*S), "WHO AWaRe", fill=DARK, font=F_SUBTITL)
-    bx = fx1 + 10*S
-    by = FY1 + 30*S
+    draw.text((fx1+10*S, FY1+10*S), _fix_arabic("WHO AWaRe"), fill=DARK, font=F_SUBTITL) # ✅ تعديل
+    bx = fx1 + 10*S; by = FY1 + 30*S
     for label, color in [("ACCESS", GREEN_TXT), ("WATCH", AMBER_TXT), ("RESERVE", RED_TXT)]:
-        lw      = tw(draw, label, F_BADGE)
-        badge_w = int(lw) + 10*S
-        rbox(draw, (bx-2*S, by-2*S, bx+badge_w, by+fh(F_BADGE)+4*S),
-             color, color, radius=5, width=1)
-        draw.text((bx+3*S, by), label, fill=WHITE, font=F_BADGE)
+        lw = tw(draw, label, F_BADGE); badge_w = int(lw) + 10*S
+        rbox(draw, (bx-2*S, by-2*S, bx+badge_w, by+fh(F_BADGE)+4*S), color, color, radius=5, width=1)
+        draw.text((bx+3*S, by), _fix_arabic(label), fill=WHITE, font=F_BADGE) # ✅ تعديل
         bx += badge_w + 5*S
-    draw.text((fx1+10*S, by+fh(F_BADGE)+7*S),
-              "1st/2nd | Caution | Last resort", fill=GRAY, font=F_SMALL)
+    draw.text((fx1+10*S, by+fh(F_BADGE)+7*S), _fix_arabic("1st/2nd | Caution | Last resort"), fill=GRAY, font=F_SMALL) # ✅ تعديل
 
     # ② SUMMARY
-    fx1 = P + fw4 + G;  fx2 = fx1 + fw4
+    fx1 = P + fw4 + G; fx2 = fx1 + fw4
     rbox(draw, (fx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
-    draw.text((fx1+10*S, FY1+10*S), "SUMMARY", fill=DARK, font=F_SUBTITL)
-    sum_items = [
-        (f"~{len(preferred)}",       "Recommended", GREEN_TXT),
-        (f"~{len(use_caution)}",     "Caution",     AMBER_TXT),
-        (f"~{len(contraindicated)}", "Avoided",     RED_TXT),
-        (f"~{len(reserve)}",         "Reserve",     BLUE_TXT),
-    ]
+    draw.text((fx1+10*S, FY1+10*S), _fix_arabic("SUMMARY"), fill=DARK, font=F_SUBTITL) # ✅ تعديل
+    sum_items = [(f"~{len(preferred)}", "Recommended", GREEN_TXT), (f"~{len(use_caution)}", "Caution", AMBER_TXT), (f"~{len(contraindicated)}", "Avoided", RED_TXT), (f"~{len(reserve)}", "Reserve", BLUE_TXT)]
     sw = (fx2 - fx1 - 16*S) // 4
     for j, (num, lbl, clr) in enumerate(sum_items):
         sx = fx1 + 10*S + j * sw
-        draw.text((sx, FY1+28*S), num, fill=clr,  font=F_SUMNUM)
-        draw.text((sx, FY1+62*S), lbl, fill=GRAY, font=F_SMALL)
+        draw.text((sx, FY1+28*S), _fix_arabic(num), fill=clr, font=F_SUMNUM) # ✅ تعديل
+        draw.text((sx, FY1+62*S), _fix_arabic(lbl), fill=GRAY, font=F_SMALL) # ✅ تعديل
 
     # ③ NOTES
-    fx1 = P + 2*(fw4+G);  fx2 = fx1 + fw4
+    fx1 = P + 2*(fw4+G); fx2 = fx1 + fw4
     rbox(draw, (fx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
-    draw.text((fx1+10*S, FY1+10*S), "NOTES", fill=DARK, font=F_SUBTITL)
+    draw.text((fx1+10*S, FY1+10*S), _fix_arabic("NOTES"), fill=DARK, font=F_SUBTITL) # ✅ تعديل
     ny = FY1 + 30*S
     for note in (notes or [])[:5]:
-        if ny + fh(F_SMALL) + 3*S > FY2 - 6*S:
-            break
-        ny = text_wrap(draw, fx1+10*S, ny, f"• {note}",
-                       F_SMALL, DARK, fx2-fx1-18*S, gap=3)
+        if ny + fh(F_SMALL) + 3*S > FY2 - 6*S: break
+        ny = text_wrap(draw, fx1+10*S, ny, f"• {note}", F_SMALL, DARK, fx2-fx1-18*S, gap=3)
 
     # ④ REFERENCES
-    fx1 = P + 3*(fw4+G);  fx2 = W - P
+    fx1 = P + 3*(fw4+G); fx2 = W - P
     rbox(draw, (fx1, FY1, fx2, FY2), FOOT_BG, FOOT_BD, radius=12, width=2)
-    draw.text((fx1+10*S, FY1+10*S), "REFERENCES", fill=DARK, font=F_SUBTITL)
-    refs = ["EUCAST 2026", "CLSI M100 2026", "IDSA AMR 2025",
-            "WHO AWaRe 2025", "Egypt Nat. Guidelines", "BNF 2025 | FDA Labels"]
+    draw.text((fx1+10*S, FY1+10*S), _fix_arabic("REFERENCES"), fill=DARK, font=F_SUBTITL) # ✅ تعديل
+    refs = ["EUCAST 2026", "CLSI M100 2026", "IDSA AMR 2025", "WHO AWaRe 2025", "Egypt Nat. Guidelines", "BNF 2025 | FDA Labels"]
     ry = FY1 + 30*S
     for ref in refs:
-        if ry + fh(F_SMALL) + 3*S > FY2 - 6*S:
-            break
-        ry = text_wrap(draw, fx1+10*S, ry, f"• {ref}",
-                       F_SMALL, DARK, fx2-fx1-18*S, gap=3)
+        if ry + fh(F_SMALL) + 3*S > FY2 - 6*S: break
+        ry = text_wrap(draw, fx1+10*S, ry, f"• {ref}", F_SMALL, DARK, fx2-fx1-18*S, gap=3)
+
     # ── Export Ultra HD ───────────────────────────────────────────────────────
     buf = io.BytesIO()
     img.save(buf, "PNG", dpi=(200, 200), optimize=False)
     return buf.getvalue()
-
     if rbcs:
         L.append(f"RBCs     : {rbcs} /HPF")
 
