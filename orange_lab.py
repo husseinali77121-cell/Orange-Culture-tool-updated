@@ -3376,7 +3376,6 @@ def gf(size: int, bold: bool = False):
                             except Exception: continue
             except Exception: continue
         return ImageFont.load_default()
-
     F_HEADER  = gf(20, True)
     F_TITLE   = gf(15, True)
     F_SUBTITL = gf(12, True)
