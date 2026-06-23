@@ -3333,7 +3333,10 @@ def generate_decision_tree_image(
     MICRO_BD   = (30, 130,  65);  MICRO_BG   = (234, 252, 238)
     FL_BD      = (190,138,  28);  FL_BG      = (255, 250, 225)
     FOOT_BD    = (185,192,200);   FOOT_BG    = (247, 249, 251)
-
+AWARE_NAME_COLORS = {
+    "[A]": (20, 138, 68),    # أخضر — Access
+    "[W]": (180, 100,  0),   # برتقالي — Watch
+}
     # ── Fonts (all scaled) ────────────────────────────────────────────────────
     def gf(size: int, bold: bool = False):
         import os as _os
