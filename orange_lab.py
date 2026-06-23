@@ -10,8 +10,10 @@ import hashlib
 import streamlit as st
 import streamlit.components.v1 as stc_components
 import arabic_reshaper
-from bidi.algorithm import get_display ARABIC_SUPPORT = True
-except ImportError: ARABIC_SUPPORT = False
+from bidi.algorithm import get_display 
+ARABIC_SUPPORT = True
+except ImportError: 
+ARABIC_SUPPORT = False
 from datetime import datetime, date
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
