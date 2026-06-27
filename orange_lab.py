@@ -10,6 +10,7 @@ import hashlib
 from datetime import datetime, date
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
+from collections import OrderedDict
 
 import streamlit as st
 
@@ -263,6 +264,7 @@ def init_session_state() -> None:
         # ─── Cached Computations (prevent regeneration on every widget) ────
         "_img_bytes":              None,
         "_img_hash":               "",
+        "_img_error":              False,   # FIXED: added to retry on failure
         "_rpt_text":               "",
         "_rpt_hash":               "",
         "_pdf_bytes":              None,
@@ -383,6 +385,7 @@ def clean_patient_name(name: str) -> str:
     if len(name) < 3:
         return ""
     return name.title() if re.search(r"[A-Za-z]", name) else name
+
 def get_subscription_days_left(email: str) -> Optional[int]:
     email = (email or "").strip().lower()
     if email not in SUBSCRIBERS:
@@ -461,10 +464,7 @@ def check_subscription(email: str) -> bool:
 def logout(reason: str = "تم تسجيل الخروج.") -> None:
     st.session_state.clear()
     st.session_state["logout_reason"] = reason
-    if hasattr(st, "rerun"):
-        st.rerun()
-    else:
-        st.experimental_rerun()
+    st.rerun()  # FIXED: removed experimental_rerun fallback
 
 def handle_session_timeout() -> None:
     last_activity = st.session_state.get("last_activity")
@@ -630,7 +630,7 @@ def detect_pus_cells(text: str) -> str:
     Extract Pus cells / WBCs from OCR text.
     Handles: 6-8, 10-15, >10, Over 100, >100/HPF, TNTC, كثيرة
     """
-    import re
+    # FIXED: removed internal import re and use global re
     text_l = text.lower()
 
     # ── Text qualifiers (check first) ────────────────────────────────────────
@@ -657,9 +657,9 @@ def detect_pus_cells(text: str) -> str:
         if m:
             return m.group(1).strip()
     return ""
+
 def detect_rbcs(text: str) -> str:
     """استخرج قيمة RBCs من نص OCR."""
-    import re
     patterns = [
         r"rbcs?\s*[:\-]?\s*(\d+\s*[-–]\s*\d+|\d+)",
         r"red\s*blood\s*cells?\s*[:\-]?\s*(\d+\s*[-–]\s*\d+|\d+)",
@@ -690,7 +690,6 @@ def detect_rbcs(text: str) -> str:
 
 def detect_culture_condition(text: str) -> str:
     """استخرج نوع ظروف المزرعة: Aerobic / Anaerobic / Both."""
-    import re
     text_l = text.lower()
     if re.search(r"both|aerobic\s*[&+]\s*anaerobic|anaerobic\s*[&+]\s*aerobic", text_l):
         return "Both (Aerobic + Anaerobic)"
@@ -1410,7 +1409,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "carbapenemase",
             "confidence": 92,
-            "mechanism": "Carbapenemase (KPC / MBL / OXA-48-like)",
+            "mechanism": "Carbapenemase (KPC / MBL / OXA-48-like) — Predicted",
             "markers_R": carb_R_list + primary_R,
             "detail": f"مقاومة لـ ≥2 كاربابينيم ({', '.join(carb_R_list)}) — نمط Carbapenemase صريح.",
             "action": "أرسل للمختبر المرجعي فوراً (PCR/mCIM). عزل صارم. Colistin/Ceftazidime-Avibactam.",
@@ -1420,7 +1419,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "carbapenemase",
             "confidence": 70,
-            "mechanism": "Possible OXA-48-like carbapenemase",
+            "mechanism": "Possible OXA-48-like carbapenemase — Predicted",
             "markers_R": ["Ertapenem"] + primary_R,
             "detail": "Ertapenem R مع Meropenem S/I — نمط مُوحٍ بـ OXA-48 (شائع في مصر/الشرق الأوسط).",
             "action": "أكد بـ mCIM / PCR (OXA-48). راقب بحذر؛ قد تكون الكاربابينيمات أقل فعالية.",
@@ -1429,7 +1428,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "carbapenemase",
             "confidence": 55,
-            "mechanism": "Possible carbapenemase (low-level)",
+            "mechanism": "Possible carbapenemase (low-level) — Predicted",
             "markers_R": carb_R_list or ["Meropenem (I)"],
             "detail": "مقاومة/توسط لكاربابينيم واحد — يستلزم اختبار تأكيدي.",
             "action": "أجرِ mCIM/CarbaNP. قد يكون فقدان بورين + ESBL/AmpC وليس carbapenemase حقيقياً.",
@@ -1440,7 +1439,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "ampc",
             "confidence": 75,
-            "mechanism": "Possible AmpC β-lactamase (derepressed/inducible)",
+            "mechanism": "Possible AmpC β-lactamase (Predicted)",
             "markers_R": primary_R + ["Cefoxitin"],
             "detail": "مقاومة لـ 3rd-gen + Cefoxitin في كائن AmpC-prone — نمط AmpC وليس ESBL.",
             "action": "تجنب 3rd-gen cephalosporins حتى لو S. استخدم Cefepime أو Carbapenem. لا يُكتشف بـ DDST.",
@@ -1451,7 +1450,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "high",
             "confidence": 88,
-            "mechanism": "ESBL (Extended-Spectrum β-Lactamase)",
+            "mechanism": "ESBL (Extended-Spectrum β-Lactamase) — Predicted",
             "markers_R": primary_R + second_R,
             "detail": f"مقاومة لـ {', '.join(primary_R)} — احتمال ESBL مرتفع.",
             "action": "استخدم Carbapenem للعدوى الشديدة (MERINO 2018). تجنب جميع cephalosporins.",
@@ -1462,7 +1461,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "high" if carbS else "moderate",
             "confidence": 72 if carbS else 60,
-            "mechanism": "Probable ESBL",
+            "mechanism": "Probable ESBL — Predicted",
             "markers_R": primary_R + med_R,
             "detail": f"مقاومة لـ {primary_R[0]}" + (" مع كاربابينيم حساس — نمط ESBL كلاسيكي." if carbS else "."),
             "action": "أكد بـ Double-Disk Synergy Test (DDST) أو PCR. عامل كـ ESBL حتى التأكيد.",
@@ -1471,7 +1470,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "moderate",
             "confidence": 50,
-            "mechanism": "Possible ESBL (lower-gen cephalosporin resistance)",
+            "mechanism": "Possible ESBL (lower-gen cephalosporin resistance) — Predicted",
             "markers_R": med_R,
             "detail": "مقاومة لـ ≥2 من الجيل الأقل — يستدعي تأكيد ESBL.",
             "action": "أجرِ DDST. قد يكون ESBL مبكر أو آلية أخرى.",
@@ -2022,11 +2021,12 @@ def _parse_cfu(text: str) -> int:
     """استخرج قيمة CFU رقمية من النص"""
     if not text:
         return 0
-    t = text.lower().strip()
-    if any(x in t for x in ["≥", ">=", ">10^5", ">100000", "10^5", "≥10", ">=10"]):
-        if "10^5" in t or "100000" in t or "≥10^5" in t:
+    # FIXED: clean spaces before checking
+    t_clean = text.lower().replace(" ", "").replace("\u2009", "").strip()
+    if any(x in t_clean for x in ["≥", ">=", ">10^5", ">100000", "10^5", "≥10", ">=10"]):
+        if "10^5" in t_clean or "100000" in t_clean:
             return 100000
-        if "10^4" in t or "10000" in t:
+        if "10^4" in t_clean or "10000" in t_clean:
             return 10000
     nums = re.findall(r'[\d]+', text.replace(",", ""))
     if not nums:
@@ -3088,18 +3088,27 @@ def get_infection_syndrome(
             if kl in spec_l or spec_l in kl:
                 syndrome_data = data
                 break
-    # Keyword fallback
+    # Keyword fallback (FIXED: use OrderedDict to ensure longer keys matched first)
     if not syndrome_data:
         spec_l = specimen.lower()
-        fallback_map = {
-            "urine": "Urine", "culture": None, "stool": "Stool",
-            "stool culture": "Stool", "fecal": "Stool", "rectal": "Stool",
-            "blood": "Blood", "blood culture": "Blood",
-            "sputum": "Sputum", "respiratory": "Sputum", "bal": "Sputum",
-            "csf": "CSF", "cerebrospinal": "CSF",
-            "wound": "Wound Swab", "swab": "Wound Swab",
-            "pus": "Pus", "abscess": "Pus", "tissue": "Wound Swab",
-        }
+        fallback_map = OrderedDict([
+            ("blood culture", "Blood"),
+            ("stool culture", "Stool"),
+            ("blood", "Blood"),
+            ("stool", "Stool"),
+            ("fecal", "Stool"),
+            ("rectal", "Stool"),
+            ("sputum", "Sputum"),
+            ("respiratory", "Sputum"),
+            ("bal", "Sputum"),
+            ("csf", "CSF"),
+            ("cerebrospinal", "CSF"),
+            ("wound", "Wound Swab"),
+            ("swab", "Wound Swab"),
+            ("pus", "Pus"),
+            ("abscess", "Pus"),
+            ("tissue", "Wound Swab"),
+        ])
         for keyword, target_key in fallback_map.items():
             if keyword in spec_l and target_key:
                 syndrome_data = INFECTION_SYNDROMES.get((target_key, None))
@@ -3176,6 +3185,7 @@ def _esc(text: str) -> str:
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace('"', "&quot;"))
+
 def generate_pdf_html_report(
     patient_name: str, age: int, sex: str, weight: float,
     cl_cr: float, is_renal: bool, is_preg: bool, is_hepatic: bool,
@@ -4176,7 +4186,7 @@ def generate_decision_tree_image(
         py += fh(F_TEXT) + 5*S
 
     # ── 4. ALERT BOX (right) — يشمل MDR/ESBL/Phenotype ──────────────────────
-    AB = (885*S, 72*S, W-P, 198*S)
+    AB = (885*S, W-P, 198*S)
 
     # لون المربع حسب خطورة الـ phenotype
     _ph_names   = [p.get("phenotype","") for p in (phenotypes or [])]
@@ -4277,7 +4287,7 @@ def generate_decision_tree_image(
                        F_SMALL, AB_TXT, alert_max_w, gap=4)
         ay += 2*S
 
-    # ── 5. ROW 2: Specimen | Microscopic Exam | First-Line ────────────────────
+    # ── 5. ROW 2: Specimen | Microscopic Exam | Clinical Strategy ─────────────
     R2_Y1 = 210*S
     R2_Y2 = 310*S
     r2w   = (W - 2*P - 2*G) // 3
@@ -4303,7 +4313,7 @@ def generate_decision_tree_image(
     r2_data = [
         ("",                   spec_items,  SPEC_BD,  SPEC_BG,  ""),
         ("MICROSCOPIC EXAM",   micro_items, MICRO_BD, MICRO_BG, "🔬"),
-        ("FIRST-LINE OPTIONS", fl_items,    FL_BD,    FL_BG,    "📋"),
+        ("CLINICAL STRATEGY", fl_items,    FL_BD,    FL_BG,    "📋"),
     ]
     for i, (title, items, bd, bg, icon) in enumerate(r2_data):
         bx1 = P + i*(r2w+G)
@@ -4647,10 +4657,7 @@ if not st.session_state.authenticated:
         if check_subscription(email_input):
             st.session_state.authenticated = True
             st.session_state.last_activity = time.time()
-            if hasattr(st, "rerun"):
-                st.rerun()
-            else:
-                st.experimental_rerun()
+            st.rerun()  # FIXED: removed experimental_rerun fallback
     st.stop()
 
 handle_session_timeout()
@@ -4685,6 +4692,13 @@ if uploaded:
                   st.session_state.last_file_hash != file_hash)
 
     if is_new:
+        # FIXED: clean up old session state keys when loading a new image
+        old_hash = st.session_state.get("last_file_hash", "")
+        if old_hash and old_hash != file_hash:
+            keys_to_delete = [k for k in st.session_state if old_hash[:8] in str(k)]
+            for key in keys_to_delete:
+                del st.session_state[key]
+
         with st.spinner("🔍 جاري تحليل صورة التقرير..."):
             try:
                 payload = extract_all_data_cached(file_bytes)
@@ -5132,9 +5146,9 @@ if uploaded:
     with col2:
         st.subheader("💊 Antibiotic Analysis")
 
-        # ══════════════════════════════════════════════════════
+        # ══════════════════════════════════════════════════════════════
         # AST Input Panel — OCR + Manual Entry موحّد
-        # ══════════════════════════════════════════════════════
+        # ══════════════════════════════════════════════════════════════
         ocr_sir_map = payload["sir_map"]
         sir_options = ["S", "I", "R"]
 
@@ -5383,9 +5397,10 @@ if uploaded:
 
         # ── Smart Antibiotic Ranking ──────────────────────────────────────
         if allowed:
+            # FIXED: removed dir() check, use phenotypes directly
             ranked = rank_sensitive_antibiotics(
                 allowed, culture_type, organism_type, sir_map,
-                phenotypes if 'phenotypes' in dir() else []
+                phenotypes
             )
             with st.expander("🏆 Smart Antibiotic Ranking", expanded=False):
                 st.caption("مرتب حسب: نتيجة المزرعة + WHO AWaRe + طريق الإعطاء + ملاءمة العينة")
@@ -5560,6 +5575,9 @@ if uploaded:
                 notes.append("Pregnancy: use with caution; consult specialist.")
             if age < 18:
                 notes.append("Pediatric age: verify age-specific suitability.")
+            # ── Add note if no preferred options (Access/Watch) ────────────
+            if not preferred_with_badge:
+                notes.append("No clear Access/Watch oral options — see Caution/Reserve columns.")
             if banned:
                 notes.append(f"{len(banned)} contraindicated / ineffective antibiotics.")
             if warned:
@@ -5568,8 +5586,8 @@ if uploaded:
             notes.append("De-escalate based on culture & sensitivity.")
 
             # Ensure syndrome_info is always defined for engines
-            _syndrome_info_safe = syndrome_info if 'syndrome_info' in dir() and syndrome_info else None
-            syndrome_info = _syndrome_info_safe  # noqa
+            # FIXED: removed dir() check and use syndrome_info directly
+            # syndrome_info is already defined above
 
             # ════════════════════════════════════════════════════════════
             # CLINICAL ENGINES UI — v4.0
@@ -5939,8 +5957,10 @@ if uploaded:
                     .encode()
                 ).hexdigest()[:16]
 
+                # FIXED: added _img_error to retry on failure
                 if (st.session_state.get("_img_hash") != _img_input_hash
-                        or not st.session_state.get("_img_bytes")):
+                        or not st.session_state.get("_img_bytes")
+                        or st.session_state.get("_img_error")):
                     try:
                         _new_img = generate_decision_tree_image(
                             patient_name=patient_name.strip() or "غير محدد",
@@ -5961,15 +5981,17 @@ if uploaded:
                             lab_city=st.session_state.get("lab_city", ""),
                             mdr_result=mdr_result,
                             esbl_result=esbl_result,
-                            phenotypes=phenotypes if "phenotypes" in dir() else [],
+                            phenotypes=phenotypes,
                             referring_physician=st.session_state.get("referring_physician",""),
                             culture_condition=st.session_state.get("culture_condition","Aerobic"),
                             microbiologist=st.session_state.get("microbiologist",""),
                         )
                         st.session_state._img_bytes = _new_img
                         st.session_state._img_hash  = _img_input_hash
+                        st.session_state._img_error = False
                     except Exception as _img_err:
                         st.error(f"خطأ في توليد الصورة: {_img_err}")
+                        st.session_state._img_error = True
 
                 img_bytes = st.session_state.get("_img_bytes")
                 if img_bytes:
