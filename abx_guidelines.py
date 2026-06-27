@@ -927,6 +927,168 @@ _EXTRA_ENTRIES = {
             "Pus":        "✅ عدوى الجلد والأنسجة الرخوة.",
         },
     },
+    # ── NEW: Cefazolin (Urine + Pus) ──────────────────────────────────────────
+    "Cefazolin": {
+        "priority": 2, "class": "1st Gen Cephalosporin (IV/IM)",
+        "note": (
+            "💉 (مثل Cefamezin/Kefzol) IV/IM فقط — bioavailability فموي = صفر. "
+            "سيفالوسبورين جيل أول — قوي ضد Gram+ (Staph/Strep) وبعض Gram-. "
+            "خيار قياسي للوقاية الجراحية ولعلاج عدوى الجلد والأنسجة الرخوة."
+        ),
+        "renal_limit": 30, "renal_note": "CrCl 20-50: 500mg-1g q8-12h. CrCl <20: 250-500mg q12h. BNF 2025.",
+        "hepatic_caution": False, "aware": "Access", "high_po": False,
+        "preg_status": "Safe", "preg_note": "مقبول في الحمل — Category B (ACOG).",
+        "child_safe": True,
+        "child_note": "مسموح للأطفال (25-100 mg/kg/day q6-8h).",
+        "interacts_with": [],
+        "aliases": ["cefamezin","kefzol","ancef","cefazolin","cefazoline"],
+        "organisms": ["Staphylococcus aureus","Streptococcus pneumoniae",
+                      "Proteus mirabilis","E. coli","Klebsiella spp."],
+        "specimen_notes": {
+            "Urine":      "✅ مناسب للمسالك البولية البسيطة (Gram+ coverage).",
+            "Pus":        "✅ خيار ممتاز لعدوى الجلد والأنسجة الرخوة والخراجات.",
+            "Wound Swab": "✅ الوقاية والعلاج الجراحي.",
+            "Blood":      "💉 خيار للـ bacteremia بالموجبات.",
+        },
+    },
+    # ── NEW: Aztreonam (Urine + Pus) ──────────────────────────────────────────
+    "Aztreonam": {
+        "priority": 3, "class": "Monobactam (IV)",
+        "note": (
+            "💉 (مثل Azactam/Primbactam) IV/IM فقط — bioavailability فموي = صفر. "
+            "مونوباكتام — فعال ضد Gram-negative هوائي فقط (بما فيها Pseudomonas). "
+            "لا يغطي Gram+ ولا لاهوائيات. آمن في الحساسية للبنسلين (no cross-reactivity). "
+            "بديل مهم في مرضى الحساسية للبيتا-لاكتام."
+        ),
+        "renal_limit": 30, "renal_note": "CrCl 10-30: 1g q12h. CrCl <10: 500mg q12h. HD: 500mg q12h + dose بعد dialysis. BNF 2025.",
+        "hepatic_caution": False, "aware": "Watch", "high_po": False,
+        "preg_status": "Safe", "preg_note": "مقبول في الحمل — Category B. آمن في حساسية البنسلين.",
+        "child_safe": True,
+        "child_note": "مسموح للأطفال (90-120 mg/kg/day q6-8h).",
+        "interacts_with": [],
+        "aliases": ["azactam","primbactam","aztreonam","azt"],
+        "organisms": ["E. coli","Klebsiella spp.","Pseudomonas aeruginosa",
+                      "Proteus mirabilis","Enterobacter spp.","Serratia marcescens"],
+        "specimen_notes": {
+            "Urine":      "✅ بديل في حساسية البنسلين للـ UTI بالسالبات.",
+            "Pus":        "✅ بديل في حساسية البنسلين للعدوى بالسالبات (يحتاج تغطية Gram+/anaerobe معه).",
+            "Blood":      "💉 بديل في حساسية البنسلين للـ bacteremia بالسالبات.",
+        },
+    },
+    # ── NEW: Cefoxitin (Urine + Pus) ──────────────────────────────────────────
+    "Cefoxitin": {
+        "priority": 3, "class": "2nd Gen Cephalosporin — Cephamycin (IV)",
+        "note": (
+            "💉 (مثل Mefoxin) IV فقط — bioavailability فموي = صفر. "
+            "سيفاميسين (جيل ثاني) — قوي ضد Gram- وبعض اللاهوائيات (Bacteroides). "
+            "مقاوم لـ AmpC β-lactamase (أفضل من الجيل الثالث في هذا). "
+            "يُستخدم كـ screening test لـ AmpC في المزرعة."
+        ),
+        "renal_limit": 30, "renal_note": "CrCl 30-50: 1-2g q8-12h. CrCl 5-29: 0.5-1g q12-24h. CrCl <5: 0.5-1g q24-48h. BNF 2025.",
+        "hepatic_caution": False, "aware": "Watch", "high_po": False,
+        "preg_status": "Safe", "preg_note": "مقبول في الحمل — Category B.",
+        "child_safe": True,
+        "child_note": "مسموح للأطفال (80-160 mg/kg/day q4-6h).",
+        "interacts_with": [],
+        "aliases": ["mefoxin","cefoxitin","cefoxitine"],
+        "organisms": ["E. coli","Klebsiella spp.","Proteus mirabilis",
+                      "Bacteroides spp.","Staphylococcus aureus","Streptococcus pneumoniae"],
+        "specimen_notes": {
+            "Urine":      "✅ مناسب للمسالك البولية — خصوصاً السالبات المنتجة لـ AmpC.",
+            "Pus":        "✅ ممتاز للخراجات والعدوى المختلطة (anaerobic coverage + AmpC stability).",
+            "Wound Swab": "✅ عدوى الجروح المختلطة.",
+            "Blood":      "💉 bacteremia بالسالبات عند الحساسية للبيتا-لاكتام.",
+        },
+    },
+    # ── NEW: Tobramycin (Pus) ─────────────────────────────────────────────────
+    "Tobramycin": {
+        "priority": 4, "class": "Aminoglycoside (IV/IM)",
+        "note": (
+            "💉 (مثل Nebcin/Tobrex) IV/IM فقط — لا bioavailability فموي. "
+            "أقل سُمية كلوية من Gentamicin نسبياً. أقوى ضد Pseudomonas من Gentamicin. "
+            "سام للكلى والأذن — يحتاج monitoring."
+        ),
+        "renal_limit": 60, "renal_note": "Extended interval: 5-7mg/kg q24h ثم تعديل حسب levels. CrCl <60: تمديد الفترة + trough <1 mcg/mL. KDIGO 2024.",
+        "hepatic_caution": False, "aware": "Access", "high_po": False,
+        "preg_status": "Banned",
+        "preg_note": (
+            "ممنوع في الحمل — Tobramycin:\n"
+            "  سُمية للأذن الجنينية (ototoxicity) — FDA Category D.\n"
+            "  يعبر المشيمة — خطر فقدان السمع الدائم للجنين."
+        ),
+        "child_safe": True,
+        "interacts_with": ["NSAIDs (مسكنات الألم)"],
+        "aliases": ["nebcin","tobrex","tobramycin","tobra"],
+        "organisms": ["E. coli","Klebsiella spp.","Pseudomonas aeruginosa",
+                      "Proteus mirabilis","Staphylococcus aureus",
+                      "Enterobacter spp.","Serratia marcescens"],
+        "specimen_notes": {
+            "Pus":        "✅ عدوى الجروح والخراجات الشديدة بالسالبات — خصوصاً Pseudomonas.",
+            "Wound Swab": "✅ العدوى الجراحية الشديدة.",
+            "Blood":      "💉 synergy مع beta-lactam في bacteremia الشديدة.",
+        },
+    },
+    # ── NEW: Gatifloxacin (Pus) ───────────────────────────────────────────────
+    "Gatifloxacin": {
+        "priority": 2, "class": "Fluoroquinolone (Respiratory)",
+        "note": (
+            "⚠️ (مثل Tequin) Oral وIV. Bioavailability فموي ~96%. "
+            "فلوروكينولون تنفسي — يغطي Gram+ وGram- وatypicals. "
+            "⚠️ تأثير على glucose homeostasis (خطر dysglycemia) — راقب سكر الدم."
+        ),
+        "renal_limit": 40, "renal_note": "CrCl <40: خفض الجرعة 50% أو مضاعفة الفترة. BNF 2025.",
+        "hepatic_caution": True, "aware": "Watch", "high_po": True,
+        "preg_status": "Warn",
+        "preg_note": (
+            "⚠️ Use with Caution — Gatifloxacin في الحمل:\n"
+            "  Fluoroquinolone — لا يُعتبر خطاً أول في الحمل.\n"
+            "  يُستخدم فقط عند انعدام البديل الأكثر أمانًا.\n"
+            ">>> القرار النهائي للطبيب المعالج حصراً. <<<"
+        ),
+        "child_safe": False,
+        "interacts_with": ["Antacids (مضادات الحموضة)"],
+        "aliases": ["tequin","gatifloxacin","gati"],
+        "organisms": ["Staphylococcus aureus","Streptococcus pneumoniae",
+                      "H. influenzae","E. coli","Klebsiella spp.",
+                      "Mycoplasma spp.","Legionella pneumophila",
+                      "Pseudomonas aeruginosa"],
+        "specimen_notes": {
+            "Pus":        "✅ عدوى الجلد والأنسجة الرخوة — خصوصاً المختلطة.",
+            "Wound Swab": "✅ عدوى الجروح المعقدة.",
+            "Sputum":     "⚠️ CAP وatypicals — لكن خطر dysglycemia.",
+        },
+    },
+    # ── NEW: Moxifloxacin (Pus) ───────────────────────────────────────────────
+    "Moxifloxacin": {
+        "priority": 3, "class": "Fluoroquinolone (Respiratory, Anaerobic)",
+        "note": (
+            "⚠️ (مثل Avelox/Moxiflox) Oral وIV. Bioavailability فموي ~90%. "
+            "فلوروكينولون تنفسي + anaerobic coverage — يغطي Gram+ وGram- وatypicals ولاهوائيات. "
+            "⚠️ لا يتركز في البول بشكل كافٍ — غير مفضل للمسالك. "
+            "⚠️ FDA: خطر QT prolongation وtendon rupture."
+        ),
+        "renal_limit": 0, "renal_note": "🟢 آمن كلوياً — لا يحتاج تعديل الجرعة.",
+        "hepatic_caution": True, "aware": "Watch", "high_po": True,
+        "preg_status": "Warn",
+        "preg_note": (
+            "⚠️ Use with Caution — Moxifloxacin في الحمل:\n"
+            "  Fluoroquinolone — لا يُعتبر خطاً أول في الحمل.\n"
+            "  يُستخدم فقط عند انعدام البديل الأكثر أمانًا.\n"
+            ">>> القرار النهائي للطبيب المعالج حصراً. <<<"
+        ),
+        "child_safe": False,
+        "interacts_with": ["Antacids (مضادات الحموضة)"],
+        "aliases": ["avelox","moxiflox","moxifloxacin","moxi"],
+        "organisms": ["Staphylococcus aureus","Streptococcus pneumoniae",
+                      "H. influenzae","Klebsiella spp.",
+                      "Mycoplasma spp.","Legionella pneumophila",
+                      "Anaerobes (لاهوائيات)","Chlamydia spp."],
+        "specimen_notes": {
+            "Pus":        "✅ ممتاز للخراجات والعدوى المختلطة (anaerobic + aerobic coverage).",
+            "Wound Swab": "✅ عدوى الجروح المختلطة — يغطي اللاهوائيات.",
+            "Sputum":     "✅ CAP وatypicals وanaerobic lung abscess.",
+        },
+    },
 }
 
 for _k, _v in _EXTRA_ENTRIES.items():
@@ -935,24 +1097,3 @@ for _k, _v in _EXTRA_ENTRIES.items():
 
 # Rebuild alias index to include new entries
 ABX_ALIAS_INDEX = build_antibiotic_alias_index(ABX_GUIDELINES)
-
-
-# ── Additional Antibiotics ─────────────────────────────────────────────
-_MORE_EXTRA = {
-"Aztreonam":{
-"priority":4,"class":"Monobactam (IV)","note":"IV only.","renal_limit":30,"renal_note":"Adjust in renal impairment.","hepatic_caution":False,"aware":"Watch","high_po":False,"preg_status":"Safe","preg_note":"","child_safe":True,"interacts_with":[],"aliases":["azactam"],"organisms":["E. coli","Klebsiella spp.","Proteus mirabilis","Pseudomonas aeruginosa"],"specimen_notes":{"Blood":"Gram-negative bacteremia.","Urine":"Complicated UTI.","Sputum":"Hospital pneumonia."}},
-"Cefoxitin":{
-"priority":3,"class":"2nd Gen Cephalosporin (IV)","note":"Cephamycin.","renal_limit":30,"renal_note":"Adjust if needed.","hepatic_caution":False,"aware":"Watch","high_po":False,"preg_status":"Safe","preg_note":"","child_safe":True,"interacts_with":[],"aliases":["mefoxin"],"organisms":["Staphylococcus aureus","E. coli","Klebsiella spp.","Proteus mirabilis"],"specimen_notes":{"Blood":"Mixed infections.","Pus":"Anaerobic/mixed infections.","Wound Swab":"Skin/soft tissue."}},
-"Gatifloxacin":{
-"priority":2,"class":"Fluoroquinolone","note":"Restricted in many countries.","renal_limit":30,"renal_note":"Adjust dose.","hepatic_caution":True,"aware":"Watch","high_po":True,"preg_status":"Warn","preg_note":"","child_safe":False,"interacts_with":["Antacids (مضادات الحموضة)"],"aliases":["gatiflox"],"organisms":["E. coli","Klebsiella spp.","Proteus mirabilis","H. influenzae","Streptococcus pneumoniae","Staphylococcus aureus"],"specimen_notes":{"Sputum":"Respiratory infections.","Urine":"Complicated UTI."}},
-"Cefazolin":{
-"priority":2,"class":"1st Gen Cephalosporin (IV)","note":"Common surgical prophylaxis.","renal_limit":30,"renal_note":"Adjust dose.","hepatic_caution":False,"aware":"Access","high_po":False,"preg_status":"Safe","preg_note":"","child_safe":True,"interacts_with":[],"aliases":["ancef","kefzol"],"organisms":["Staphylococcus aureus","Streptococcus pneumoniae","E. coli","Proteus mirabilis","Klebsiella spp."],"specimen_notes":{"Blood":"MSSA bacteremia.","Wound Swab":"Skin infections."}},
-"Tobramycin":{
-"priority":4,"class":"Aminoglycoside (IV)","note":"Anti-pseudomonal aminoglycoside.","renal_limit":60,"renal_note":"Therapeutic drug monitoring.","hepatic_caution":False,"aware":"Watch","high_po":False,"preg_status":"Banned","preg_note":"","child_safe":True,"interacts_with":["NSAIDs (مسكنات الألم)"],"aliases":["nebcin"],"organisms":["Pseudomonas aeruginosa","E. coli","Klebsiella spp.","Proteus mirabilis","Acinetobacter baumannii"],"specimen_notes":{"Blood":"Severe Gram-negative infection.","Urine":"Complicated UTI.","Sputum":"HAP/VAP."}},
-"Moxifloxacin":{
-"priority":2,"class":"Respiratory Fluoroquinolone","note":"Not recommended for UTI.","renal_limit":0,"renal_note":"No renal adjustment.","hepatic_caution":True,"aware":"Watch","high_po":True,"preg_status":"Warn","preg_note":"","child_safe":False,"interacts_with":["Antacids (مضادات الحموضة)"],"aliases":["avelox"],"organisms":["Streptococcus pneumoniae","H. influenzae","Staphylococcus aureus","Mycoplasma spp.","Legionella pneumophila"],"specimen_notes":{"Sputum":"Respiratory infections.","Blood":"Selected susceptible infections."}}
-}
-for k,v in _MORE_EXTRA.items():
-    if k not in ABX_GUIDELINES:
-        ABX_GUIDELINES[k]=v
-ABX_ALIAS_INDEX=build_antibiotic_alias_index(ABX_GUIDELINES)
