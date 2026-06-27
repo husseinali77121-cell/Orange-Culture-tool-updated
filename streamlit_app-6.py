@@ -4196,9 +4196,9 @@ def generate_decision_tree_image(
     fl_items = first_line[:4] or ["—"]
 
     r2_data = [
-        ("",                   spec_items,  SPEC_BD,  SPEC_BG,  ""),
-        ("MICROSCOPIC EXAM",   micro_items, MICRO_BD, MICRO_BG, "🔬"),
-        ("FIRST-LINE OPTIONS", fl_items,    FL_BD,    FL_BG,    "📋"),
+    ("",                   spec_items,  SPEC_BD,  SPEC_BG,  ""),
+    ("MICROSCOPIC EXAM",   micro_items, MICRO_BD, MICRO_BG, "🔬"),
+    ("CLINICAL STRATEGY",  fl_items,    FL_BD,    FL_BG,    "📋"),
     ]
     for i, (title, items, bd, bg, icon) in enumerate(r2_data):
         bx1 = P + i*(r2w+G)
