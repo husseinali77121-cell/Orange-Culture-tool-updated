@@ -935,3 +935,24 @@ for _k, _v in _EXTRA_ENTRIES.items():
 
 # Rebuild alias index to include new entries
 ABX_ALIAS_INDEX = build_antibiotic_alias_index(ABX_GUIDELINES)
+
+
+# ── Additional Antibiotics ─────────────────────────────────────────────
+_MORE_EXTRA = {
+"Aztreonam":{
+"priority":4,"class":"Monobactam (IV)","note":"IV only.","renal_limit":30,"renal_note":"Adjust in renal impairment.","hepatic_caution":False,"aware":"Watch","high_po":False,"preg_status":"Safe","preg_note":"","child_safe":True,"interacts_with":[],"aliases":["azactam"],"organisms":["E. coli","Klebsiella spp.","Proteus mirabilis","Pseudomonas aeruginosa"],"specimen_notes":{"Blood":"Gram-negative bacteremia.","Urine":"Complicated UTI.","Sputum":"Hospital pneumonia."}},
+"Cefoxitin":{
+"priority":3,"class":"2nd Gen Cephalosporin (IV)","note":"Cephamycin.","renal_limit":30,"renal_note":"Adjust if needed.","hepatic_caution":False,"aware":"Watch","high_po":False,"preg_status":"Safe","preg_note":"","child_safe":True,"interacts_with":[],"aliases":["mefoxin"],"organisms":["Staphylococcus aureus","E. coli","Klebsiella spp.","Proteus mirabilis"],"specimen_notes":{"Blood":"Mixed infections.","Pus":"Anaerobic/mixed infections.","Wound Swab":"Skin/soft tissue."}},
+"Gatifloxacin":{
+"priority":2,"class":"Fluoroquinolone","note":"Restricted in many countries.","renal_limit":30,"renal_note":"Adjust dose.","hepatic_caution":True,"aware":"Watch","high_po":True,"preg_status":"Warn","preg_note":"","child_safe":False,"interacts_with":["Antacids (مضادات الحموضة)"],"aliases":["gatiflox"],"organisms":["E. coli","Klebsiella spp.","Proteus mirabilis","H. influenzae","Streptococcus pneumoniae","Staphylococcus aureus"],"specimen_notes":{"Sputum":"Respiratory infections.","Urine":"Complicated UTI."}},
+"Cefazolin":{
+"priority":2,"class":"1st Gen Cephalosporin (IV)","note":"Common surgical prophylaxis.","renal_limit":30,"renal_note":"Adjust dose.","hepatic_caution":False,"aware":"Access","high_po":False,"preg_status":"Safe","preg_note":"","child_safe":True,"interacts_with":[],"aliases":["ancef","kefzol"],"organisms":["Staphylococcus aureus","Streptococcus pneumoniae","E. coli","Proteus mirabilis","Klebsiella spp."],"specimen_notes":{"Blood":"MSSA bacteremia.","Wound Swab":"Skin infections."}},
+"Tobramycin":{
+"priority":4,"class":"Aminoglycoside (IV)","note":"Anti-pseudomonal aminoglycoside.","renal_limit":60,"renal_note":"Therapeutic drug monitoring.","hepatic_caution":False,"aware":"Watch","high_po":False,"preg_status":"Banned","preg_note":"","child_safe":True,"interacts_with":["NSAIDs (مسكنات الألم)"],"aliases":["nebcin"],"organisms":["Pseudomonas aeruginosa","E. coli","Klebsiella spp.","Proteus mirabilis","Acinetobacter baumannii"],"specimen_notes":{"Blood":"Severe Gram-negative infection.","Urine":"Complicated UTI.","Sputum":"HAP/VAP."}},
+"Moxifloxacin":{
+"priority":2,"class":"Respiratory Fluoroquinolone","note":"Not recommended for UTI.","renal_limit":0,"renal_note":"No renal adjustment.","hepatic_caution":True,"aware":"Watch","high_po":True,"preg_status":"Warn","preg_note":"","child_safe":False,"interacts_with":["Antacids (مضادات الحموضة)"],"aliases":["avelox"],"organisms":["Streptococcus pneumoniae","H. influenzae","Staphylococcus aureus","Mycoplasma spp.","Legionella pneumophila"],"specimen_notes":{"Sputum":"Respiratory infections.","Blood":"Selected susceptible infections."}}
+}
+for k,v in _MORE_EXTRA.items():
+    if k not in ABX_GUIDELINES:
+        ABX_GUIDELINES[k]=v
+ABX_ALIAS_INDEX=build_antibiotic_alias_index(ABX_GUIDELINES)
