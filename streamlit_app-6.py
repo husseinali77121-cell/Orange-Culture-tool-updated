@@ -264,6 +264,7 @@ def init_session_state() -> None:
         # ─── Cached Computations (prevent regeneration on every widget) ────
         "_img_bytes":              None,
         "_img_hash":               "",
+        "_img_error":              False,
         "_rpt_text":               "",
         "_rpt_hash":               "",
         "_pdf_bytes":              None,
@@ -384,6 +385,7 @@ def clean_patient_name(name: str) -> str:
     if len(name) < 3:
         return ""
     return name.title() if re.search(r"[A-Za-z]", name) else name
+
 def get_subscription_days_left(email: str) -> Optional[int]:
     email = (email or "").strip().lower()
     if email not in SUBSCRIBERS:
@@ -658,6 +660,7 @@ def detect_pus_cells(text: str) -> str:
         if m:
             return m.group(1).strip()
     return ""
+
 def detect_rbcs(text: str) -> str:
     """استخرج قيمة RBCs من نص OCR."""
     import re
@@ -3124,6 +3127,7 @@ def _esc(text: str) -> str:
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace('"', "&quot;"))
+
 def generate_pdf_html_report(
     patient_name: str, age: int, sex: str, weight: float,
     cl_cr: float, is_renal: bool, is_preg: bool, is_hepatic: bool,
@@ -3384,7 +3388,6 @@ def generate_pdf_html_report(
             # Clean up extra spaces
             result = re.sub(r'\s+', ' ', result).strip()
         return result
-
 
     # ── AWaRe helpers ────────────────────────────────────────────────────
     AWARE_CLR  = {"Access": "#1e8449", "Watch": "#b7770d", "Reserve": "#922b21"}
@@ -4297,177 +4300,6 @@ def generate_decision_tree_image(
     img.save(buf, "PNG", dpi=(200, 200), optimize=False)
     return buf.getvalue()
 
-    if rbcs:
-        L.append(f"RBCs     : {rbcs} /HPF")
-
-    if organism in ORGANISM_PROFILE:
-        op = ORGANISM_PROFILE[organism]
-        if op.get("note"):
-            L.append(f"Note       : {op['note']}")
-        spec_ctx = (op.get("specimen_context") or {}).get(specimen, "")
-        if spec_ctx:
-            L.append(f"Context    : {spec_ctx}")
-        if op.get("first_line"):
-            L.append(f"First-line : {', '.join(op['first_line'])}")
-        if op.get("avoid"):
-            L.append(f"Avoid      : {', '.join(op['avoid'])}")
-
-    if sir_map:
-        L += ["\nSENSITIVITY RESULTS", sep2]
-        for drug, result in sorted(sir_map.items()):
-            label = {"S": "Sensitive", "R": "Resistant", "I": "Intermediate"}.get(result, result)
-            L.append(f"{drug:<40} {label}")
-
-    if interactions:
-        L += ["\nINTERACTIONS / WARNINGS", sep2]
-        for item in sorted(set(interactions)):
-            L.append(f"- {item}")
-
-    # MDR/XDR/PDR + ESBL في التقرير
-    if sir_map:
-        mdr_r = classify_mdr(organism, sir_map)
-        if mdr_r["level"]:
-            info = MDR_INFO[mdr_r["level"]]
-            L += [f"\n{info['icon']} RESISTANCE CLASSIFICATION: {info['label']}", sep2,
-                  info["detail"],
-                  f"Resistant ({mdr_r['resistant_count']}/{mdr_r['total_tested']}): "
-                  + ", ".join(mdr_r['resistant_categories']),
-                  f"Action: {info['action']}", ""]
-        esbl_r = predict_esbl(organism, sir_map)
-        prob   = esbl_r.get("probability")
-        if prob == "carbapenemase":
-            L += [f"\n🚨 {esbl_r.get('mechanism','POSSIBLE CARBAPENEMASE PRODUCER').upper()}", sep2,
-                  esbl_r["detail"], f"Action: {esbl_r['action']}", ""]
-        elif prob == "ampc":
-            L += ["\n⚠️  POSSIBLE AmpC β-LACTAMASE PRODUCER", sep2,
-                  esbl_r["detail"], f"Action: {esbl_r['action']}", ""]
-        elif prob == "high":
-            L += ["\n⚠️  HIGH PROBABILITY ESBL PRODUCER", sep2,
-                  esbl_r["detail"], f"Action: {esbl_r['action']}", ""]
-        elif prob == "moderate":
-            L += ["\n🔶 ESBL CONFIRMATION RECOMMENDED", sep2,
-                  esbl_r["detail"], f"Action: {esbl_r['action']}", ""]
-
-    L += ["\nRECOMMENDED ANTIBIOTICS", sep]
-    if allowed:
-        for item in allowed:
-            sir_tag  = f" [Culture: {sir_map[item['name']]}]" if sir_map and item['name'] in sir_map else ""
-            preg_tag = " [Pregnancy: caution]" if (is_preg and item.get("preg_status") == "Warn") else ""
-            L += [f"\n{item['name']}{sir_tag}{preg_tag}", sep2,
-                  f"WHO AWaRe : {item.get('aware','-')}",
-                  f"Class     : {item.get('class','-')}",
-                  f"Route     : {'Oral/PO-friendly' if item.get('high_po') else 'IV/IM only'}"]
-            spec_note = (item.get("specimen_notes") or {}).get(specimen, "")
-            if spec_note:
-                L += [f"Note      : {item.get('note','')}", f"{specimen}   : {spec_note}"]
-            else:
-                L.append(f"Note      : {item.get('note','')}")
-            if is_renal:
-                L.append(f"Renal     : {item.get('renal_note','-')}")
-            if is_preg and item.get("preg_status") == "Warn":
-                pn = (item.get("preg_note") or "").splitlines()
-                if pn:
-                    L.append(f"Pregnancy : {pn[0]}")
-            if show_commercial_names:
-                _brands = get_commercial_name(item["name"])
-                if _brands:
-                    L.append(f"Brands    : {_brands}")
-    else:
-        L.append("No recommended options after applying all restrictions.")
-
-    if warned:
-        L += ["\nDOSE ADJUSTMENT / USE WITH CAUTION", sep]
-        if is_renal:
-            L.append(f"Patient CrCl = {cl_cr:.1f} ml/min\n")
-        for item in warned:
-            sir_tag = f" [Culture: {sir_map[item['name']]}]" if sir_map and item['name'] in sir_map else ""
-            L += [f"{item['name']}{sir_tag}", sep2, f"WHO AWaRe : {item.get('aware','-')}"]
-            if item.get("warning_reason") == "intermediate_culture":
-                L.append("Reason    : Intermediate (I) on culture result")
-            else:
-                L += [f"Renal note: {item.get('renal_note','-')}",
-                      f"Limit CrCl: <= {item.get('renal_limit','-')} ml/min"]
-            if show_commercial_names:
-                _brands = get_commercial_name(item["name"])
-                if _brands:
-                    L.append(f"Brands    : {_brands}")
-            L.append("")
-
-    if is_preg and preg_warn_items:
-        L += ["\nPREGNANCY — USE WITH CAUTION", sep]
-        for item in preg_warn_items:
-            L += [item['name'], sep2]
-            L.extend((item.get("preg_note") or "").splitlines())
-            L.append("")
-
-    if banned:
-        L += ["\nCONTRAINDICATED / INEFFECTIVE", sep]
-        grouped: Dict[str, list] = {
-            "resistant": [], "renal": [], "pregnancy": [],
-            "child": [], "organism": [], "other": [],
-        }
-        for item in banned:
-            grouped.setdefault(item["category"], []).append(item)
-        labels = [
-            ("resistant", "[A] RESISTANT IN CULTURE"),
-            ("renal",     "[B] CONTRAINDICATED — RENAL IMPAIRMENT"),
-            ("pregnancy", "[C] CONTRAINDICATED — PREGNANCY"),
-            ("child",     "[D] NOT SUITABLE FOR AGE"),
-            ("organism",  f"[E] INEFFECTIVE FOR {organism}"),
-            ("other",     "[F] OTHER CONTRAINDICATIONS"),
-        ]
-        for cat, heading in labels:
-            if grouped.get(cat):
-                L += [f"\n{heading}", sep2]
-                for b in grouped[cat]:
-                    L.append(f"- {b['name']} — {b['reason_short']}")
-                    if cat == "renal":
-                        dk       = b["name"].lower().replace(" ", "")
-                        rendered = False
-                        for k, v in RENAL_BAN_REASONS.items():
-                            if k in dk:
-                                L.extend([f"  {ln}" for ln in v.splitlines()])
-                                rendered = True
-                                break
-                        if not rendered:
-                            L.extend([f"  {ln}" for ln in (b.get("reason_detail") or "").splitlines()])
-                    else:
-                        L.extend([f"  {ln}" for ln in (b.get("reason_detail") or "").splitlines()])
-                    L.append("")
-
-    # ── Pathogenicity Assessment ──────────────────────────────────────
-    if patho_assessment:
-        sc    = patho_assessment.get("score", 0)
-        verd  = patho_assessment.get("verdict", "")
-        interp = patho_assessment.get("interpretation", "")
-        recs  = patho_assessment.get("recommendations", [])
-        flags = patho_assessment.get("special_flags", [])
-        L += ["", "PATHOGENICITY ASSESSMENT", sep2,
-              f"Score    : {sc}% — {verd}"]
-        if "ABU_DETECTED" in flags:
-            L.append("FLAG     : Asymptomatic Bacteriuria (ABU) Detected")
-        if "MW_REJECT" in flags:
-            L.append("FLAG     : Murray-Washington — Specimen REJECTED")
-        elif "MW_ADEQUATE" in flags:
-            L.append("FLAG     : Murray-Washington — Adequate Sputum Quality")
-        if "SIRS_HIGH" in flags:
-            L.append("FLAG     : SIRS >=3 criteria — Sepsis Probable")
-        if interp:
-            L.append(f"Interp   : {interp}")
-        if recs:
-            L.append("Recs     :")
-            for r in recs:
-                L.append(f"  • {r}")
-
-    L += ["\nDISCLAIMER", sep,
-          "هذا التقرير أداة مساعدة للقرار الطبي وليس بديلاً عن التقييم السريري.",
-          "القرار النهائي للوصف العلاجي يعود للطبيب المعالج.", sep,
-          "Guidelines: EUCAST 2026 | CLSI M100 2026 | IDSA AMR 2025 | Egypt National",
-          "Route info: BNF 2025 | FDA Labels | WHO AWaRe 2025",
-          "WHO AWaRe : Access | Watch | Reserve", sep,
-          f"Developed by Dr / Hussein Ali | {lab_name}{(' | ' + lab_city) if lab_city else ''}", sep]
-    return "\n".join(L)
-
 
 def generate_report(
     patient_name:    str,
@@ -4779,6 +4611,13 @@ if uploaded:
                   st.session_state.last_file_hash != file_hash)
 
     if is_new:
+        # Clean up old session keys when loading a new image
+        old_hash = st.session_state.get("last_file_hash", "")
+        if old_hash and old_hash != file_hash:
+            keys_to_delete = [k for k in st.session_state if old_hash[:8] in str(k)]
+            for key in keys_to_delete:
+                del st.session_state[key]
+
         with st.spinner("🔍 جاري تحليل صورة التقرير..."):
             try:
                 payload = extract_all_data_cached(file_bytes)
@@ -5482,8 +5321,7 @@ if uploaded:
         # ── Smart Antibiotic Ranking ──────────────────────────────────────
         if allowed:
             ranked = rank_sensitive_antibiotics(
-                allowed, culture_type, organism_type, sir_map,
-                phenotypes if 'phenotypes' in dir() else []
+                allowed, culture_type, organism_type, sir_map, phenotypes
             )
             with st.expander("🏆 Smart Antibiotic Ranking", expanded=False):
                 st.caption("مرتب حسب: نتيجة المزرعة + WHO AWaRe + طريق الإعطاء + ملاءمة العينة")
@@ -5665,9 +5503,8 @@ if uploaded:
             notes.append("Treatment guided by severity and local resistance patterns.")
             notes.append("De-escalate based on culture & sensitivity.")
 
-            # Ensure syndrome_info is always defined for engines
-            _syndrome_info_safe = syndrome_info if 'syndrome_info' in dir() and syndrome_info else None
-            syndrome_info = _syndrome_info_safe  # noqa
+            # Use syndrome_info directly
+            # syndrome_info is already defined
 
             # ════════════════════════════════════════════════════════════
             # CLINICAL ENGINES UI — v4.0
@@ -6037,7 +5874,8 @@ if uploaded:
                 ).hexdigest()[:16]
 
                 if (st.session_state.get("_img_hash") != _img_input_hash
-                        or not st.session_state.get("_img_bytes")):
+                        or not st.session_state.get("_img_bytes")
+                        or st.session_state.get("_img_error")):
                     try:
                         _new_img = generate_decision_tree_image(
                             patient_name=patient_name.strip() or "غير محدد",
@@ -6058,15 +5896,17 @@ if uploaded:
                             lab_city=st.session_state.get("lab_city", ""),
                             mdr_result=mdr_result,
                             esbl_result=esbl_result,
-                            phenotypes=phenotypes if "phenotypes" in dir() else [],
+                            phenotypes=phenotypes,
                             referring_physician=st.session_state.get("referring_physician",""),
                             culture_condition=st.session_state.get("culture_condition","Aerobic"),
                             microbiologist=st.session_state.get("microbiologist",""),
                         )
                         st.session_state._img_bytes = _new_img
                         st.session_state._img_hash  = _img_input_hash
+                        st.session_state._img_error = False
                     except Exception as _img_err:
                         st.error(f"خطأ في توليد الصورة: {_img_err}")
+                        st.session_state._img_error = True
 
                 img_bytes = st.session_state.get("_img_bytes")
                 if img_bytes:
