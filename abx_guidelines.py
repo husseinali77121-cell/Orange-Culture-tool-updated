@@ -1,12 +1,15 @@
+# ============================
+# FILE: abx_guidelines-5.py
+# ============================
 # © 2025 Dr. Hussein Ali — Orange Lab, 6 October City, Egypt
 # Orange Culture Tool — Data Module
 # Unauthorized copying or distribution is prohibited.
 """Clinical antibiotic guideline dataset for Orange Culture Tool.
 
 Enhancements in this revision:
-- helper functions for normalization and alias lookup
-- lightweight schema validation utilities
-- explicit exported alias index for fast matching
+- Added Cefazolin, Cefoxitin, Tobramycin, Gatifloxacin, Moxifloxacin
+- Updated specimen_notes for urine and pus cultures
+- Full schema validation and alias index
 """
 
 import re
@@ -267,6 +270,41 @@ ABX_GUIDELINES = {
             "CSF":    "🛑 meningitis المعقد في ICU.",
         },
     },
+    # ── New Cephalosporins (Cefazolin, Cefoxitin) ─────────────────────
+    "Cefazolin": {
+        "priority": 2, "class": "1st Gen Cephalosporin (IV)",
+        "note": "💉 (مثل Ancef/Kefzol) IV فقط. يستخدم للوقاية الجراحية وعدوى الجلد والأنسجة الرخوة.",
+        "renal_limit": 50,
+        "renal_note": "CrCl 10-30: 500mg q12h. CrCl <10: 250mg q12h. BNF 2025.",
+        "hepatic_caution": False, "aware": "Access", "high_po": False,
+        "preg_status": "Safe", "preg_note": "",
+        "child_safe": True, "interacts_with": [],
+        "aliases": ["ancef","kefzol","cefazolin"],
+        "organisms": ["Staphylococcus aureus","E. coli","Klebsiella spp.",
+                      "Proteus mirabilis","Streptococcus pneumoniae"],
+        "specimen_notes": {
+            "Urine":      "✅ مناسب لالتهابات المسالك البولية (UTI) عند تأكيد الحساسية.",
+            "Pus":        "✅ فعال في العدوى الجراحية والخراجات (معظم الإصابات الجلدية).",
+            "Wound Swab": "✅ خيار ممتاز للوقاية الجراحية وعدوى الجروح.",
+        },
+    },
+    "Cefoxitin": {
+        "priority": 3, "class": "2nd Gen Cephalosporin (Cephamycin) (IV)",
+        "note": "💉 (مثل Mefoxin) IV فقط. يغطي اللاهوائيات، يُستخدم للعدوى داخل البطن وأمراض النساء.",
+        "renal_limit": 50,
+        "renal_note": "CrCl 10-30: 1g q12h. CrCl <10: 500mg q12h. BNF 2025.",
+        "hepatic_caution": False, "aware": "Watch", "high_po": False,
+        "preg_status": "Safe", "preg_note": "",
+        "child_safe": True, "interacts_with": [],
+        "aliases": ["mefoxin","cefoxitin"],
+        "organisms": ["E. coli","Klebsiella spp.","Proteus mirabilis",
+                      "Bacteroides fragilis","Staphylococcus aureus"],
+        "specimen_notes": {
+            "Urine":      "✅ مناسب لالتهابات المسالك البولية المعقدة (مع اشتباه لاهوائيات).",
+            "Pus":        "✅ فعال في الخراجات والعدوى المختلطة (يغطي اللاهوائيات).",
+            "Wound Swab": "✅ خيار للجروح الملوثة والعدوى المختلطة.",
+        },
+    },
     # ── Fluoroquinolones ───────────────────────────────────────────────
     "Ciprofloxacin": {
         "priority": 2, "class": "Fluoroquinolone",
@@ -284,9 +322,6 @@ ABX_GUIDELINES = {
             "  أقل مما كان يُعتقد — لكن لا يزال غير مستصاف.\n"
             "  يُستخدم فقط عند: انعدام البديل الأكثر أمانًا + الضرورة الطبية.\n"
             "  >>> القرار النهائي للطبيب المعالج حصراً. <<<"
-        ),
-        "preg_note_en": (
-            "Pregnancy caution — Ciprofloxacin:\n  Not a first-line agent at any point in pregnancy.\n  Recent evidence (ENTIS 2024 / BMJ 2023): teratogenicity risk lower than previously thought — but still not cleared.\n  Use only when no safer alternative is available + medical necessity confirmed.\n  >>> Final decision: treating physician exclusively. <<<"
         ),
         "child_safe": False,
         "interacts_with": ["Antacids (مضادات الحموضة)","Warfarin (مضادات التخثر)"],
@@ -318,9 +353,6 @@ ABX_GUIDELINES = {
             "  يُستخدم فقط عند انعدام البديل الأكثر أمانًا.\n"
             "  >>> القرار النهائي للطبيب المعالج حصراً. <<<"
         ),
-        "preg_note_en": (
-            "⚠️ Use with Caution — Levofloxacin in pregnancy:\n  Fluoroquinolone — not a first-line agent in pregnancy.\n  Recent evidence (ENTIS 2024): teratogenicity risk lower than previously thought.\n  Use only when no safer alternative is available.\n  >>> Final decision: treating physician exclusively. <<<"
-        ),
         "child_safe": False,
         "interacts_with": ["Antacids (مضادات الحموضة)"],
         "aliases": ["tavanic","levaquin","levoflox"],
@@ -345,9 +377,6 @@ ABX_GUIDELINES = {
             "  الأدلة الحديثة (ENTIS 2024): خطر التشوهات أقل مما كان يُعتقد.\n"
             "  يُستخدم فقط عند انعدام البديل الأكثر أمانًا.\n"
             "  >>> القرار النهائي للطبيب المعالج حصراً. <<<"
-        ),
-        "preg_note_en": (
-            "⚠️ Use with Caution — Ofloxacin in pregnancy:\n  Fluoroquinolone — not a first-line agent in pregnancy.\n  Recent evidence (ENTIS 2024): teratogenicity risk lower than previously thought.\n  Use only when no safer alternative is available.\n  >>> Final decision: treating physician exclusively. <<<"
         ),
         "child_safe": False,
         "interacts_with": ["Antacids (مضادات الحموضة)"],
@@ -374,9 +403,6 @@ ABX_GUIDELINES = {
             "  ⚠️ Bioavailability منخفضة (35%) — تركيز محدود خارج البول.\n"
             "  >>> القرار النهائي للطبيب المعالج حصراً. <<<"
         ),
-        "preg_note_en": (
-            "⚠️ Use with Caution — Norfloxacin in pregnancy:\n  Fluoroquinolone — not a first-line agent in pregnancy.\n  Recent evidence (ENTIS 2024): teratogenicity risk lower than previously thought.\n  ⚠️ Low bioavailability (35%) — limited systemic concentration outside urinary tract.\n  >>> Final decision: treating physician exclusively. <<<"
-        ),
         "child_safe": False,
         "interacts_with": ["Antacids (مضادات الحموضة)"],
         "aliases": ["noroxin","norflox"],
@@ -384,6 +410,49 @@ ABX_GUIDELINES = {
                       "Staphylococcus aureus","Enterococcus faecalis"],
         "specimen_notes": {
             "Urine": "⚠️ مخصص للمسالك البولية فقط — لا تركيز علاجي خارج البول.",
+        },
+    },
+    # ── New Fluoroquinolones (Gatifloxacin, Moxifloxacin) ─────────────
+    "Gatifloxacin": {
+        "priority": 3, "class": "Fluoroquinolone (Oral/IV)",
+        "note": "⚠️ (مثل Tequin) Oral وIV. فعال للعدوى التنفسية والجلدية، لكن استخدامه محدود بسبب QTc prolongation.",
+        "renal_limit": 50, "renal_note": "CrCl <30: خفض الجرعة.",
+        "hepatic_caution": True, "aware": "Watch", "high_po": True,
+        "preg_status": "Warn",
+        "preg_note": (
+            "⚠️ Use with Caution — Gatifloxacin في الحمل:\n"
+            "  Fluoroquinolone — لا يُعتبر خطاً أول.\n"
+            "  انتبه لـ QTc prolongation."
+        ),
+        "child_safe": False,
+        "interacts_with": ["Antacids (مضادات الحموضة)"],
+        "aliases": ["tequin","gatiflox"],
+        "organisms": ["E. coli","Klebsiella spp.","Staphylococcus aureus","Streptococcus pneumoniae"],
+        "specimen_notes": {
+            "Urine":      "⚠️ يمكن استخدامه في المسالك المعقدة.",
+            "Pus":        "⚠️ فعال في التهابات الجلد والأنسجة الرخوة (SSTI)، لكن يُفضل الفلوروكينولونات الأخرى.",
+            "Wound Swab": "⚠️ خيار بديل للعدوى الجلدية.",
+        },
+    },
+    "Moxifloxacin": {
+        "priority": 3, "class": "Fluoroquinolone (Oral/IV)",
+        "note": "⚠️ (مثل Avelox) Oral وIV. طيف واسع، ممتاز للجهاز التنفسي والجلد.",
+        "renal_limit": 0, "renal_note": "🟢 لا يحتاج تعديل كلوي (يُطرح كبدياً).",
+        "hepatic_caution": True, "aware": "Watch", "high_po": True,
+        "preg_status": "Warn",
+        "preg_note": (
+            "⚠️ Use with Caution — Moxifloxacin في الحمل:\n"
+            "  Fluoroquinolone — لا يُعتبر خطاً أول.\n"
+            "  بيانات محدودة."
+        ),
+        "child_safe": False,
+        "interacts_with": ["Antacids (مضادات الحموضة)"],
+        "aliases": ["avelox","moxiflox"],
+        "organisms": ["Staphylococcus aureus","Streptococcus pneumoniae","H. influenzae","Mycoplasma spp."],
+        "specimen_notes": {
+            "Sputum":     "✅ ممتاز لـ CAP وعدوى الجهاز التنفسي.",
+            "Pus":        "⚠️ خيار للعدوى الجلدية المعقدة (SSTI) عند فشل الخطوط الأولى.",
+            "Wound Swab": "⚠️ بديل للعدوى الجلدية المختلطة.",
         },
     },
     # ── Urinary Antiseptics ────────────────────────────────────────────
@@ -404,9 +473,6 @@ ABX_GUIDELINES = {
             "     → neonatal hemolysis عند الوليد.\n"
             "  البديل في الـ 3rd trim: Fosfomycin (جرعة واحدة) أو Cephalexin.\n"
             "  >>> القرار النهائي للطبيب المعالج حسب الـ trimester. <<<"
-        ),
-        "preg_note_en": (
-            "Pregnancy caution — Nitrofurantoin:\n  ✅ Safe in 1st and 2nd trimester for UTI treatment (ACOG 2023).\n  ⛔ Avoid in 3rd trimester, especially at term (≥36 weeks gestation):\n     → Risk of fetal hemolytic anemia (G6PD deficiency).\n     → Neonatal hemolysis.\n  Alternative in 3rd trimester: Fosfomycin (single dose 3g) or Cephalexin.\n  >>> Final decision: treating physician based on trimester. <<<"
         ),
         "child_safe": True,
         "child_note": "⚠️ ممنوع <1 شهر (خطر hemolytic anemia في نقص G6PD). مقبول بعد شهر. AAP 2024.",
@@ -433,9 +499,6 @@ ABX_GUIDELINES = {
             "  بيانات أكثر طمأنينة من الـ Fluoroquinolones.\n"
             "  >>> القرار النهائي للطبيب المعالج حصراً. <<<"
         ),
-        "preg_note_en": (
-            "Pregnancy caution — Fosfomycin:\n  EMA/BNF 2025: Acceptable as single dose (3g) for uncomplicated UTI in pregnancy.\n  Preferred over Nitrofurantoin in 3rd trimester.\n  More reassuring safety data than Fluoroquinolones.\n  >>> Final decision: treating physician exclusively. <<<"
-        ),
         "child_safe": True,
         "child_note": "مسموح >12 سنة (oral 3g). IV: من عمر أصغر بإشراف طبي. AAP 2024 / EMA.",
         "interacts_with": [],
@@ -456,9 +519,6 @@ ABX_GUIDELINES = {
             "ممنوع في الحمل — Gentamicin:\n"
             "  سُمية للأذن الجنينية (ototoxicity) — FDA Category D.\n"
             "  يعبر المشيمة — خطر فقدان السمع الدائم للجنين."
-        ),
-        "preg_note_en": (
-            "⛔ Contraindicated in pregnancy — Gentamicin:\n  Fetal ototoxicity (cochlear hair cell damage) — FDA Category D.\n  Crosses placenta — risk of permanent hearing loss in the fetus."
         ),
         "child_safe": True,
         "interacts_with": ["NSAIDs (مسكنات الألم)"],
@@ -482,9 +542,6 @@ ABX_GUIDELINES = {
             "  سُمية للأذن الجنينية (ototoxicity) — FDA Category D.\n"
             "  يعبر المشيمة — خطر فقدان السمع الدائم للجنين."
         ),
-        "preg_note_en": (
-            "⛔ Contraindicated in pregnancy — Amikacin:\n  Fetal ototoxicity — FDA Category D (same class as Gentamicin).\n  Crosses placenta — risk of permanent fetal hearing loss."
-        ),
         "child_safe": True,
         "interacts_with": ["NSAIDs (مسكنات الألم)"],
         "aliases": ["amikin","amikacin"],
@@ -494,6 +551,29 @@ ABX_GUIDELINES = {
             "Blood":  "💉 MDR gram-negatives bacteremia.",
             "Sputum": "💉 HAP/VAP مع MDR organisms.",
             "Urine":  "💉 UTI المعقد مع MDR organisms.",
+        },
+    },
+    # ── New Aminoglycoside (Tobramycin) ────────────────────────────────
+    "Tobramycin": {
+        "priority": 4, "class": "Aminoglycoside (IV/IM)",
+        "note": "💉 (مثل Nebcin) IV/IM فقط. فعال ضد Pseudomonas والسالبات الأخرى. سام للكلى والأذن.",
+        "renal_limit": 60, "renal_note": "دوز حسب CrCl: 3-5mg/kg/day مقسمة. مراقبة مستويات الدم.",
+        "hepatic_caution": False, "aware": "Watch", "high_po": False,
+        "preg_status": "Banned",
+        "preg_note": (
+            "ممنوع في الحمل — Tobramycin:\n"
+            "  سُمية للأذن الجنينية (ototoxicity) — FDA Category D.\n"
+            "  يعبر المشيمة — خطر فقدان السمع الدائم للجنين."
+        ),
+        "child_safe": True,
+        "interacts_with": ["NSAIDs (مسكنات الألم)"],
+        "aliases": ["nebcin","tobra","tobramycin"],
+        "organisms": ["Pseudomonas aeruginosa","E. coli","Klebsiella spp.",
+                      "Staphylococcus aureus","Proteus mirabilis"],
+        "specimen_notes": {
+            "Urine":      "💉 لالتهابات المسالك المعقدة مع Pseudomonas.",
+            "Pus":        "💉 فعال في العدوى الشديدة بالأنسجة الرخوة والخراجات (خاصة مع Pseudomonas).",
+            "Wound Swab": "💉 للعدوى الجراحية الشديدة.",
         },
     },
     # ── Macrolides ─────────────────────────────────────────────────────
@@ -529,9 +609,6 @@ ABX_GUIDELINES = {
             "  ارتبط بتشوهات خلقية في الدراسات الحيوانية والبشرية.\n"
             "  البديل الآمن: Azithromycin."
         ),
-        "preg_note_en": (
-            "⛔ Contraindicated in pregnancy — Clarithromycin:\n  Associated with congenital malformations (animal and human studies — JAMA 2019 cohort).\n  Safe alternative: Azithromycin."
-        ),
         "child_safe": True, "interacts_with": [],
         "aliases": ["klacid","biaxin"],
         "organisms": ["Staphylococcus aureus","Streptococcus pneumoniae",
@@ -554,9 +631,6 @@ ABX_GUIDELINES = {
             "ممنوع في الحمل — TMP/SMX:\n"
             "  يثبط حمض الفوليك — خطر Neural Tube Defects في الـ 1st trimester.\n"
             "  يسبب kernicterus للجنين في الـ 3rd trimester."
-        ),
-        "preg_note_en": (
-            "⛔ Contraindicated in pregnancy — TMP/SMX:\n  Trimethoprim is a folate antagonist → risk of Neural Tube Defects (1st trimester).\n  Sulfonamides → neonatal kernicterus (3rd trimester).\n  Alternative: Nitrofurantoin (1st/2nd trim) | Fosfomycin | Cephalexin."
         ),
         "child_safe": True,
         "interacts_with": ["Warfarin (مضادات التخثر)"],
@@ -586,9 +660,6 @@ ABX_GUIDELINES = {
             "  يُفضل تجنبه في الـ 1st trimester عند وجود بديل آمن.\n"
             "  >>> القرار النهائي للطبيب المعالج حصراً. <<<"
         ),
-        "preg_note_en": (
-            "Pregnancy caution — Metronidazole:\n  ACOG 2021 (updated): Recent evidence refuted historical malformation concerns.\n  Acceptable throughout all trimesters when medically necessary.\n  Prefer to avoid in 1st trimester if a safer alternative exists.\n  >>> Final decision: treating physician exclusively. <<<"
-        ),
         "child_safe": True,
         "interacts_with": ["Warfarin (مضادات التخثر)"],
         "aliases": ["flagyl","metro","metrogyl"],
@@ -610,9 +681,6 @@ ABX_GUIDELINES = {
             "ممنوع في الحمل — Tinidazole:\n"
             "  ممنوع في الـ 1st trimester.\n"
             "  يُفضل تجنبه طوال الحمل — استبدل بـ Metronidazole."
-        ),
-        "preg_note_en": (
-            "⛔ Contraindicated in pregnancy — Tinidazole:\n  Contraindicated in 1st trimester.\n  Prefer to avoid throughout pregnancy — substitute with Metronidazole."
         ),
         "child_safe": False,
         "interacts_with": ["Warfarin (مضادات التخثر)"],
@@ -638,9 +706,6 @@ ABX_GUIDELINES = {
             "  محظور خاصة بعد الأسبوع 15 (2nd و3rd trimester).\n"
             "  ACOG 2023 / BNF 2025: لا يُستخدم في الحمل إطلاقاً.\n"
             "  البديل: Amoxicillin-Clavulanate أو Cephalosporin أو Azithromycin."
-        ),
-        "preg_note_en": (
-            "⛔ Contraindicated in pregnancy — Doxycycline (Tetracycline class):\n  Chelates into fetal bone and teeth → permanent tooth discoloration and inhibited bone growth.\n  Contraindicated especially after week 15 (2nd and 3rd trimester).\n  ACOG 2023 / BNF 2025: Do not use at any point in pregnancy.\n  Alternative: Amoxicillin-Clavulanate or Cephalosporin or Azithromycin."
         ),
         "child_safe": False,
         "child_note": "ممنوع <8 سنوات (teeth/bone). >8 سنوات: مقبول للـ atypicals وRickettsia عند الضرورة. BNF 2025.",
@@ -674,9 +739,6 @@ ABX_GUIDELINES = {
             "  عند الحاجة لكاربابينيم في الحمل: يُفضل Meropenem (بيانات أكثر أمانًا).\n"
             "  يُستخدم Imipenem فقط عند تعذّر Meropenem وخطورة الحالة.\n"
             "  >>> القرار النهائي للطبيب المعالج حصراً. <<<"
-        ),
-        "preg_note_en": (
-            "Pregnancy caution — Imipenem/Cilastatin:\n  Limited human data — Category C.\n  When a carbapenem is needed in pregnancy: Meropenem preferred (more reassuring safety data).\n  Use Imipenem only if Meropenem is unavailable and clinical severity demands it.\n  >>> Final decision: treating physician exclusively. <<<"
         ),
         "child_safe": True,
         "interacts_with": ["Valproic acid (مضادات الصرع)"],
@@ -752,9 +814,6 @@ ABX_GUIDELINES = {
             "  مراقبة وظائف الكلى والسمع للأم والجنين.\n"
             "  >>> القرار النهائي للطبيب المعالج حصراً. <<<"
         ),
-        "preg_note_en": (
-            "Pregnancy caution — Vancomycin:\n  Use only when critically necessary (MRSA in pregnancy).\n  Monitor maternal and fetal renal function and hearing.\n  >>> Final decision: treating physician exclusively. <<<"
-        ),
         "child_safe": True,
         "interacts_with": ["NSAIDs (مسكنات الألم)"],
         "aliases": ["vancocin","vanco"],
@@ -780,9 +839,6 @@ ABX_GUIDELINES = {
             "ممنوع في الحمل — Linezolid:\n"
             "  أثبت سُمية جنينية في الحيوانات.\n"
             "  يُستخدم فقط عند انعدام البدائل."
-        ),
-        "preg_note_en": (
-            "⛔ Contraindicated in pregnancy — Linezolid:\n  Demonstrated fetal toxicity in animal studies.\n  Use only when no alternative is available."
         ),
         "child_safe": True,
         "interacts_with": ["SSRI (أدوية الاكتئاب)"],
@@ -813,9 +869,6 @@ ABX_GUIDELINES = {
             "  يُستخدم فقط لإنقاذ الحياة في XDR gram-negatives عند غياب أي بديل.\n"
             "  BNF 2025: تجنّب ما أمكن — monitor renal function closely.\n"
             "  >>> القرار النهائي للطبيب المعالج حصراً. <<<"
-        ),
-        "preg_note_en": (
-            "⚠️ Use with Caution — Colistin in pregnancy:\n  Very limited human data — Category C.\n  Severe nephrotoxicity → risk to maternal and fetal renal function.\n  Life-saving use only for XDR gram-negative infections when no alternative exists.\n  BNF 2025: Avoid whenever possible — monitor renal function closely.\n  >>> Final decision: treating physician exclusively. <<<"
         ),
         "child_safe": True,
         "interacts_with": ["NSAIDs (مسكنات الألم)"],
@@ -947,9 +1000,6 @@ _EXTRA_ENTRIES = {
             "  ACOG 2023 / BNF 2025: contraindication مطلقة في كل مراحل الحمل.\n"
             "  البديل: Amoxicillin-Clavulanate أو Cephalosporin أو Azithromycin."
         ),
-        "preg_note_en": (
-            "⛔ Contraindicated in pregnancy — Tetracycline (Tetracycline class):\n  Chelates into fetal bone and teeth → permanent tooth discoloration and inhibited bone growth.\n  ACOG 2023 / BNF 2025: Absolute contraindication throughout all trimesters.\n  Alternative: Amoxicillin-Clavulanate or Cephalosporin or Azithromycin."
-        ),
         "child_safe": False,
         "interacts_with": ["Antacids (مضادات الحموضة)"],
         "aliases": ["achromycin","tetracycline","tetracyclin"],
@@ -969,9 +1019,6 @@ _EXTRA_ENTRIES = {
         "hepatic_caution": False, "aware": "Access", "high_po": True,
         "preg_status": "Safe",
         "preg_note": "مقبول في الحمل — Category B (ACOG).",
-        "preg_note_en": (
-            "Acceptable in pregnancy — Category B (ACOG)."
-        ),
         "child_safe": True,
         "child_note": "مسموح للأطفال > 9 أشهر. جرعة 25-50 mg/kg/day.",
         "interacts_with": [],
