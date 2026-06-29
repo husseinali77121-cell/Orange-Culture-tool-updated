@@ -7,6 +7,7 @@ import json
 import re
 import time
 import hashlib
+from collections import OrderedDict
 from datetime import datetime, date
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Tuple
@@ -464,10 +465,7 @@ def check_subscription(email: str) -> bool:
 def logout(reason: str = "تم تسجيل الخروج.") -> None:
     st.session_state.clear()
     st.session_state["logout_reason"] = reason
-    if hasattr(st, "rerun"):
-        st.rerun()
-    else:
-        st.experimental_rerun()
+    st.rerun()
 
 def handle_session_timeout() -> None:
     last_activity = st.session_state.get("last_activity")
@@ -540,9 +538,17 @@ def detect_age(text: str) -> Optional[int]:
     return None
 
 def detect_sex(text_lower: str) -> Optional[str]:
-    if any(t in text_lower for t in ["female", "sex: f", "gender: female", "أنثى", "انثى"]):
+    """Robust sex detection — regex with word boundaries, Female checked first.
+    Handles: 'sex: male/female', 'sex: m/f', 'sex=male', 'gender: ...', Arabic."""
+    # Female first (avoids 'male' substring inside 'female')
+    if (re.search(r'(?:sex|gender)\s*[:=]?\s*(?:female|f\b)', text_lower)
+            or re.search(r'\bfemale\b', text_lower)
+            or "أنثى" in text_lower or "انثى" in text_lower):
         return "Female"
-    if any(t in text_lower for t in ["male", "sex: m", "gender: male", "ذكر"]):
+    # Male: word boundary on 'male' so it won't fire on 'female'
+    if (re.search(r'(?:sex|gender)\s*[:=]?\s*(?:male|m\b)', text_lower)
+            or re.search(r'\bmale\b', text_lower)
+            or "ذكر" in text_lower):
         return "Male"
     return None
 
@@ -781,7 +787,8 @@ def analyze_antibiotics(
     #        even if AST reports S (inoculum effect; EUCAST/CLSI report-as-tested
     #        but clinically carbapenem is required for serious infection).
     # Carbapenemase -> also resistant to carbapenems.
-    _mech = predict_esbl(organism_type, sir_map) if sir_map else {"probability": None}
+    _mech = predict_esbl(organism_type, sir_map) if sir_map else {}
+    _mech = _mech or {}
     _mech_prob = _mech.get("probability")
     _is_esbl_like   = _mech_prob in ("high", "ampc")
     _is_carbapenemase = _mech_prob == "carbapenemase"
@@ -789,12 +796,21 @@ def analyze_antibiotics(
     # ── Detect MRSA from AST markers (Oxacillin/Cefoxitin R), not just name ────
     # A S. aureus with Oxacillin-R or Cefoxitin-R IS MRSA -> ALL beta-lactams fail
     # (except anti-MRSA cephalosporins like Ceftaroline, not in this formulary).
-    _org_l_aa = organism_type.lower()
+    _org_l_aa = (organism_type or "").lower()
     _is_staph = ("staphylococcus" in _org_l_aa or "staph" in _org_l_aa
                  or _org_l_aa == "mrsa" or _org_l_aa == "mssa")
+    # MRSA detection: AST markers + organism name + free-text report markers
+    _mrsa_text_markers = (
+        "mrsa screen positive" in _org_l_aa
+        or "pbp2a positive" in _org_l_aa
+        or "pbp2a" in _org_l_aa
+        or "methicillin resistant" in _org_l_aa
+        or "methicillin-resistant" in _org_l_aa
+    )
     _mrsa_marker_R = (sir_map.get("Oxacillin") == "R"
                       or sir_map.get("Cefoxitin") == "R"
-                      or _org_l_aa == "mrsa")
+                      or _org_l_aa == "mrsa"
+                      or _mrsa_text_markers)
     _is_mrsa = _is_staph and _mrsa_marker_R
 
     def _is_penicillin_or_ceph(info_dict: Dict) -> bool:
@@ -944,6 +960,54 @@ def analyze_antibiotics(
             continue
 
         # Nitrofurantoin: contraindicated below its renal threshold (EMA/BNF 2025 = 45)
+        # ── D-test: Inducible Clindamycin Resistance (CLSI M100 2026) ──────────
+        if "clindamycin" in d_low and culture_result == "S":
+            erythro_r = sir_map.get("Erythromycin") == "R"
+            if erythro_r:
+                d_test_val = (sir_map.get("D-test") or
+                              sir_map.get("D test") or "").strip().upper()
+                if d_test_val == "NEGATIVE":
+                    pass  # Confirmed D-test negative → safe to use
+                else:
+                    label = "D-test Positive" if d_test_val == "POSITIVE" else "D-test Not Confirmed"
+                    banned.append(build_banned_item(
+                        drug, "d_test_inducible",
+                        f"مقاومة Clindamycin المستحثة — {label}",
+                        f"Erythromycin=R + Clindamycin=S → MLSB inducible resistance محتملة. "
+                        f"لا تُستخدم Clindamycin إلا بعد تأكيد D-test سالب. CLSI M100 2026 / EUCAST 2026.",
+                    ))
+                    continue
+
+        # ── Fusidic acid: لا monotherapy في العدوى الجهازية ─────────────────────
+        if "fusidic" in d_low and info.get("no_monotherapy_systemic"):
+            if specimen in ("Blood", "CSF", "Sputum"):
+                interactions_alerts.append(
+                    "⚠️ Fusidic acid: لا يُستخدم منفرداً في العدوى الجهازية — "
+                    "combination إلزامي (+ Rifampicin أو + Vancomycin). مقاومة سريعة."
+                )
+
+        # ── Penicillin: Penicillinase في المكورات العنقودية ─────────────────────
+        if ("penicillin" in d_low and "oxacillin" not in d_low
+                and info.get("penicillinase_sensitive")):
+            org_l = (organism_type or "").lower()
+            is_staph = ("staphylococcus aureus" in org_l or "mrsa" in org_l
+                        or "mssa" in org_l or "staph" in org_l)
+            if is_staph and culture_result != "S":
+                banned.append(build_banned_item(
+                    drug, "penicillinase_producer",
+                    "إنتاج Beta-lactamase (Penicillinase)",
+                    "90%+ من S. aureus تنتج Penicillinase → Penicillin غير فعال. "
+                    "استخدم Cefazolin أو Oxacillin (MSSA) أو Vancomycin (MRSA).",
+                ))
+                continue
+
+        # ── Oxacillin: MSSA alert للـ bacteremia ─────────────────────────────────
+        if "oxacillin" in d_low and culture_result == "S" and specimen == "Blood":
+            interactions_alerts.append(
+                "ℹ️ Oxacillin=S (MSSA confirmed). Cefazolin مفضل على Oxacillin "
+                "في bacteremia (أقل interstitial nephritis). IDSA 2024."
+            )
+
         _nf_limit = info.get("renal_limit", 45)
         if is_renal and "nitrofurantoin" in d_low and cl_cr < _nf_limit:
             banned.append(build_banned_item(
@@ -1367,14 +1431,13 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
     erta_R   = _r("Ertapenem")
     mero_R   = _r("Meropenem")
     mero_I   = sir_map.get("Meropenem") == "I"
-    imi_R    = _r("Imipenem/Cilastatin")
 
     # ── 1. Carbapenemase tiers (highest priority) ─────────────────────────
     if len(carb_R_list) >= 2:
         return {
             "probability": "carbapenemase",
             "confidence": 92,
-            "mechanism": "Carbapenemase (KPC / MBL / OXA-48-like)",
+            "mechanism": "Carbapenemase (KPC / MBL / OXA-48-like) — Predicted",
             "markers_R": carb_R_list + primary_R,
             "detail": f"مقاومة لـ ≥2 كاربابينيم ({', '.join(carb_R_list)}) -- نمط Carbapenemase صريح.",
             "action": "أرسل للمختبر المرجعي فوراً (PCR/mCIM). عزل صارم. Colistin/Ceftazidime-Avibactam.",
@@ -1384,7 +1447,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "carbapenemase",
             "confidence": 70,
-            "mechanism": "Possible OXA-48-like carbapenemase",
+            "mechanism": "Possible OXA-48-like carbapenemase — Predicted",
             "markers_R": ["Ertapenem"] + primary_R,
             "detail": "Ertapenem R مع Meropenem S/I -- نمط مُوحٍ بـ OXA-48 (شائع في مصر/الشرق الأوسط).",
             "action": "أكد بـ mCIM / PCR (OXA-48). راقب بحذر؛ قد تكون الكاربابينيمات أقل فعالية.",
@@ -1393,7 +1456,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "carbapenemase",
             "confidence": 55,
-            "mechanism": "Possible carbapenemase (low-level)",
+            "mechanism": "Possible carbapenemase (low-level) — Predicted",
             "markers_R": carb_R_list or ["Meropenem (I)"],
             "detail": "مقاومة/توسط لكاربابينيم واحد -- يستلزم اختبار تأكيدي.",
             "action": "أجرِ mCIM/CarbaNP. قد يكون فقدان بورين + ESBL/AmpC وليس carbapenemase حقيقياً.",
@@ -1404,7 +1467,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "ampc",
             "confidence": 75,
-            "mechanism": "Possible AmpC β-lactamase (derepressed/inducible)",
+            "mechanism": "Possible AmpC β-lactamase (Predicted)",
             "markers_R": primary_R + ["Cefoxitin"],
             "detail": "مقاومة لـ 3rd-gen + Cefoxitin في كائن AmpC-prone -- نمط AmpC وليس ESBL.",
             "action": "تجنب 3rd-gen cephalosporins حتى لو S. استخدم Cefepime أو Carbapenem. لا يُكتشف بـ DDST.",
@@ -1415,7 +1478,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "high",
             "confidence": 88,
-            "mechanism": "ESBL (Extended-Spectrum β-Lactamase)",
+            "mechanism": "ESBL (Extended-Spectrum β-Lactamase) — Predicted",
             "markers_R": primary_R + second_R,
             "detail": f"مقاومة لـ {', '.join(primary_R)} -- احتمال ESBL مرتفع.",
             "action": "استخدم Carbapenem للعدوى الشديدة (MERINO 2018). تجنب جميع cephalosporins.",
@@ -1426,7 +1489,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "high" if carbS else "moderate",
             "confidence": 72 if carbS else 60,
-            "mechanism": "Probable ESBL",
+            "mechanism": "Probable ESBL — Predicted",
             "markers_R": primary_R + med_R,
             "detail": f"مقاومة لـ {primary_R[0]}" + (" مع كاربابينيم حساس -- نمط ESBL كلاسيكي." if carbS else "."),
             "action": "أكد بـ Double-Disk Synergy Test (DDST) أو PCR. عامل كـ ESBL حتى التأكيد.",
@@ -1435,7 +1498,7 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
         return {
             "probability": "moderate",
             "confidence": 50,
-            "mechanism": "Possible ESBL (lower-gen cephalosporin resistance)",
+            "mechanism": "Possible ESBL (lower-gen cephalosporin resistance) — Predicted",
             "markers_R": med_R,
             "detail": "مقاومة لـ ≥2 من الجيل الأقل -- يستدعي تأكيد ESBL.",
             "action": "أجرِ DDST. قد يكون ESBL مبكر أو آلية أخرى.",
@@ -1986,11 +2049,12 @@ def _parse_cfu(text: str) -> int:
     """استخرج قيمة CFU رقمية من النص"""
     if not text:
         return 0
-    t = text.lower().strip()
-    if any(x in t for x in ["≥", ">=", ">10^5", ">100000", "10^5", "≥10", ">=10"]):
-        if "10^5" in t or "100000" in t or "≥10^5" in t:
+    # Clean spaces (incl. thin space U+2009) before threshold checks
+    t_clean = text.lower().replace(" ", "").replace("\u2009", "").strip()
+    if any(x in t_clean for x in ["≥", ">=", ">10^5", ">100000", "10^5", "≥10", ">=10"]):
+        if "10^5" in t_clean or "100000" in t_clean:
             return 100000
-        if "10^4" in t or "10000" in t:
+        if "10^4" in t_clean or "10000" in t_clean:
             return 10000
     nums = re.findall(r'[\d]+', text.replace(",", ""))
     if not nums:
@@ -2329,12 +2393,14 @@ def get_treatment_duration(
 # IDSA OPAT 2019 | BNF 2025 | BSAC 2023
 # ═══════════════════════════════════════════════════════════════════════
 HIGH_BIOAVAILABILITY: Dict[str, int] = {
+    # Keys match abx_guidelines.py drug names exactly for cross-module consistency
     "Ciprofloxacin": 95, "Levofloxacin": 99, "Moxifloxacin": 90,
     "Ofloxacin": 95, "Norfloxacin": 30,
     "Metronidazole": 99, "Linezolid": 100,
-    "Trimethoprim-Sulfamethoxazole": 90, "Doxycycline": 93,
+    "Trimethoprim/Sulfamethoxazole": 90, "Doxycycline": 93,
     "Minocycline": 95, "Clindamycin": 87, "Fluconazole": 90,
-    "Rifampicin": 95, "Amoxicillin": 65, "Amoxicillin-Clavulanate": 65,
+    "Rifampicin": 95, "Amoxicillin": 90,
+    "Amoxicillin + Clavulanic acid": 65,             # fixed: was "Amoxicillin-Clavulanate"
     "Cephalexin": 90, "Cephradine": 90, "Cefuroxime": 52, "Cefixime": 50,
     "Nitrofurantoin": 85, "Fosfomycin": 36, "Azithromycin": 37,
     "Clarithromycin": 52, "Erythromycin": 35, "Trimethoprim": 90,
@@ -3042,15 +3108,26 @@ def get_infection_syndrome(
     # Keyword fallback
     if not syndrome_data:
         spec_l = specimen.lower()
-        fallback_map = {
-            "urine": "Urine", "culture": None, "stool": "Stool",
-            "stool culture": "Stool", "fecal": "Stool", "rectal": "Stool",
-            "blood": "Blood", "blood culture": "Blood",
-            "sputum": "Sputum", "respiratory": "Sputum", "bal": "Sputum",
-            "csf": "CSF", "cerebrospinal": "CSF",
-            "wound": "Wound Swab", "swab": "Wound Swab",
-            "pus": "Pus", "abscess": "Pus", "tissue": "Wound Swab",
-        }
+        fallback_map = OrderedDict([
+            ("blood culture", "Blood"),
+            ("stool culture", "Stool"),
+            ("urine", "Urine"),
+            ("blood", "Blood"),
+            ("stool", "Stool"),
+            ("fecal", "Stool"),
+            ("rectal", "Stool"),
+            ("sputum", "Sputum"),
+            ("respiratory", "Sputum"),
+            ("bal", "Sputum"),
+            ("csf", "CSF"),
+            ("cerebrospinal", "CSF"),
+            ("wound", "Wound Swab"),
+            ("swab", "Wound Swab"),
+            ("pus", "Pus"),
+            ("abscess", "Pus"),
+            ("tissue", "Wound Swab"),
+            ("culture", None),
+        ])
         for keyword, target_key in fallback_map.items():
             if keyword in spec_l and target_key:
                 syndrome_data = INFECTION_SYNDROMES.get((target_key, None))
@@ -3608,6 +3685,14 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:0.6mm 0; }
             f'<div class="alert al-danger" style="font-size:8.5pt;line-height:1.6">'
             f'{"".join(_avoid_rows)}</div>'
         )
+        # Pregnancy-banned — separate line for clarity
+        _preg_banned = [_bd for _bd in banned if _bd.get("category") == "pregnancy"]
+        if _preg_banned and is_preg:
+            _pb_names = ", ".join(_esc(_bd["name"]) for _bd in _preg_banned)
+            H.append(
+                '<div class="alert al-danger" style="font-size:8.5pt;margin-top:1mm">'
+                f'⛔ <b>Pregnancy Contraindicated:</b> {_pb_names}</div>'
+            )
 
     # ── DOSE ADJUSTMENT / USE WITH CAUTION -- full detailed section ──────
     if warned:
@@ -3761,7 +3846,7 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:0.6mm 0; }
                     H.append(f'<div class="alert al-danger" style="font-size:8.5pt"><b>🚨 {_em3}</b> ({_ec3}%)</div>')
                     H.append(f'<div style="font-size:8pt;color:#922b21">{_ed3[:130]}</div>')
                 elif _ep3 in ("high","ampc"):
-                    _l3 = "AmpC" if _ep3 == "ampc" else "ESBL+"
+                    _l3 = "AmpC β-Lactamase" if _ep3 == "ampc" else "ESBL Producer"
                     H.append(f'<div class="alert al-danger" style="font-size:8.5pt"><b>⚠️ {_l3}</b> ({_ec3}%) — {_em3}</div>')
                     H.append(f'<div style="font-size:8pt;color:#555">{_ed3[:130]}</div>')
                 elif _ep3 == "moderate":
@@ -3782,9 +3867,67 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:0.6mm 0; }
                 for _ph3 in phenotypes[:3]:
                     _phn3 = _esc(_ph3.get("phenotype",""))
                     H.append(f'<div style="font-size:8.5pt;color:#6e2fa0;margin-top:0.5mm">🔬 {_phn3}</div>')
-            # No resistance info at all
-            if not esbl_result and not (mdr_result and mdr_result.get("level")) and not phenotypes:
-                H.append('<div class="alert al-info" style="font-size:9pt">No resistance markers detected in current AST panel.</div>')
+            # No resistance info → show full Susceptibility Summary
+            if (not esbl_result or esbl_result.get("probability") in ("low", None)) \
+               and not (mdr_result and mdr_result.get("level")) \
+               and not phenotypes:
+                H.append('<div class="sec-ttl">Susceptibility Summary</div>')
+                # ── AST stats ──────────────────────────────────────────────────
+                _s_n = sum(1 for v in sir_map.values() if v == "S")
+                _i_n = sum(1 for v in sir_map.values() if v == "I")
+                _r_n = sum(1 for v in sir_map.values() if v == "R")
+                _tot = len(sir_map)
+                _gram_txt = ("Gram-positive organism"
+                             if (mdr_result or {}).get("gram") == "positive"
+                             else "Gram-negative organism"
+                             if (mdr_result or {}).get("gram") == "negative"
+                             else "")
+                _access_n = sum(1 for d in allowed if d.get("aware") == "Access")
+                _watch_n  = sum(1 for d in allowed if d.get("aware") == "Watch")
+                _res_n    = sum(1 for d in allowed if d.get("aware") == "Reserve")
+                _aware_str = (
+                    (f"{_access_n} Access" if _access_n else "")
+                    + (" · " if _access_n and (_watch_n or _res_n) else "")
+                    + (f"{_watch_n} Watch" if _watch_n else "")
+                    + (" · " if _watch_n and _res_n else "")
+                    + (f"{_res_n} Reserve" if _res_n else "")
+                )
+                # Score bar colour: green if >60% sensitive
+                _pct_s = int(_s_n / _tot * 100) if _tot else 0
+                _bar_clr = "#1e8449" if _pct_s >= 60 else "#b7770d" if _pct_s >= 40 else "#922b21"
+                H.append(
+                    f'<div class="score-bar" style="margin:1mm 0">'
+                    f'<div class="score-fill" style="width:{_pct_s}%;background:{_bar_clr}"></div></div>'
+                )
+                H.append(
+                    '<table style="width:100%;border-collapse:collapse;font-size:9pt;margin-top:0.5mm">'
+                    f'<tr><td style="padding:0.5mm 1mm;color:#1e8449">✅ Sensitive</td>'
+                    f'<td style="padding:0.5mm 1mm;font-weight:bold;color:#1e8449">{_s_n} agents</td>'
+                    f'<td style="padding:0.5mm 1mm;font-size:8pt;color:#888">{_pct_s}%</td></tr>'
+                    + (f'<tr><td style="padding:0.5mm 1mm;color:#b7770d">🟡 Intermediate</td>'
+                       f'<td style="padding:0.5mm 1mm;font-weight:bold;color:#b7770d">{_i_n} agent{"s" if _i_n!=1 else ""}</td>'
+                       f'<td></td></tr>' if _i_n else "")
+                    + f'<tr><td style="padding:0.5mm 1mm;color:#922b21">❌ Resistant</td>'
+                      f'<td style="padding:0.5mm 1mm;font-weight:bold;color:#922b21">{_r_n} agent{"s" if _r_n!=1 else ""}</td>'
+                      f'<td></td></tr>'
+                    '</table>'
+                )
+                H.append('<hr class="dv" style="margin:0.8mm 0">')
+                if _gram_txt:
+                    H.append(f'<div style="font-size:9pt;color:#1a1a2e;margin:0.3mm 0">'
+                             f'🦠 {_gram_txt}</div>')
+                H.append(f'<div style="font-size:9pt;color:#0d3b66;margin:0.3mm 0">'
+                         f'Pattern: <b>Non-MDR / Susceptible</b></div>')
+                if _aware_str:
+                    H.append(f'<div style="font-size:9pt;color:#555;margin:0.3mm 0">'
+                             f'AWaRe: {_aware_str}</div>')
+                H.append('<hr class="dv" style="margin:0.8mm 0">')
+                H.append(
+                    '<div class="alert al-info" style="font-size:8.5pt">'
+                    '📋 No ESBL / AmpC / Carbapenemase markers detected.<br>'
+                    '<span style="font-size:8pt">Standard culture-directed therapy applicable. '
+                    'Follow recommended regimen above.</span></div>'
+                )
     H.append('</div></div>')
 
     # ── PREGNANCY -- USE WITH CAUTION  (dedicated section) ─────────────────
@@ -4619,10 +4762,7 @@ if not st.session_state.authenticated:
         if check_subscription(email_input):
             st.session_state.authenticated = True
             st.session_state.last_activity = time.time()
-            if hasattr(st, "rerun"):
-                st.rerun()
-            else:
-                st.experimental_rerun()
+            st.rerun()
     st.stop()
 
 handle_session_timeout()
