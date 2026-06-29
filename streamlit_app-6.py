@@ -3412,75 +3412,74 @@ def generate_pdf_html_report(
                         or "mrsa" in str(organism).lower()
 
     def pill(txt, style):
-        return f'<span style="padding:0.3mm 2.5mm;border-radius:2mm;font-size:6.5pt;font-weight:bold;{style}">{_esc(txt)}</span>'
-
+        return f'<span style="padding:0.3mm 2.5mm;border-radius:2mm;font-size:8pt;font-weight:bold;{style}">{_esc(txt)}</span>'
     # ── Compact CSS ──────────────────────────────────────────────────────
     CSS = """
 @page {
     size: A4;
-    margin: 12mm 12mm 14mm 12mm;
+    margin: 6mm 10mm 8mm 10mm;
     @bottom-center {
         content: "Page " counter(page) " of " counter(pages) " | Microbiology CDSS | " string(labname);
-        font-size: 6.5pt; color: #888;
+        font-size: 7.5pt; color: #888;
         font-family: 'DejaVu Sans', sans-serif;
     }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Amiri','Noto Naskh Arabic','DejaVu Sans',Arial,sans-serif;
-       font-size: 8.5pt; color: #1a1a2e; direction: ltr; background: #fff; }
+       font-size: 9pt; color: #1a1a2e; direction: ltr; background: #fff; }
 .ltr { direction: ltr; unicode-bidi: embed; display: inline; }
 .rtl { direction: rtl; unicode-bidi: embed; }
-/* Header -- compact */
-.hdr { background:#0d3b66; color:#fff; padding:4mm 10mm 3mm; display:flex;
+/* Header — compact */
+.hdr { background:#0d3b66; color:#fff; padding:2mm 8mm 1.5mm; display:flex;
        justify-content:space-between; align-items:center; }
 .hdr-lab  { font-size:14pt; font-weight:bold; }
-.hdr-sub  { font-size:7.5pt; opacity:0.85; margin-top:0.5mm; }
-.hdr-pills { margin-top:1mm; }
-.hdr-right { font-size:7.5pt; opacity:0.9; text-align:right; direction:ltr; }
-.accent   { height:2mm; background:#ff8c00; }
-.content  { padding: 3mm 0; }
-/* Micro info grid: 4 columns */
-.info4 { display: table; width: 100%; border-collapse: collapse; font-size:7.5pt; margin:2mm 0; }
-.info4 tr td { padding: 1.5mm 3mm; border: 0.3pt solid #d5d8dc; }
+.hdr-sub  { font-size:8pt; opacity:0.85; margin-top:0.3mm; }
+.hdr-pills { margin-top:0.5mm; }
+.hdr-right { font-size:8pt; opacity:0.9; text-align:right; direction:ltr; }
+.accent   { height:1mm; background:#ff8c00; }
+.content  { padding: 0.5mm 0; }
+/* Micro info grid */
+.info4 { display: table; width: 100%; border-collapse: collapse; font-size:8pt; margin:1mm 0; }
+.info4 tr td { padding: 1mm 2.5mm; border: 0.3pt solid #d5d8dc; }
 .lbl4 { background:#f4f6f8; font-weight:bold; color:#0d3b66; width:14%; }
 .val4 { width:22%; }
-/* Section */
-.sec-ttl { font-size:8pt; font-weight:bold; color:#0d3b66; text-transform:uppercase;
-            border-bottom:1.2pt solid #0d3b66; padding-bottom:0.5mm; margin:3mm 0 1.5mm;
+/* Section titles — tighter */
+.sec-ttl { font-size:8.5pt; font-weight:bold; color:#0d3b66; text-transform:uppercase;
+            border-bottom:1pt solid #0d3b66; padding-bottom:0.2mm; margin:1.2mm 0 0.6mm;
             direction:ltr; text-align:left; }
 /* AST table */
-.ast { width:100%; border-collapse:collapse; font-size:7.5pt; direction:ltr; }
-.ast th { background:#0d3b66; color:#fff; padding:1.5mm 3mm; text-align:left; font-size:7.5pt; }
-.ast td { padding:1.2mm 3mm; border:0.3pt solid #d5d8dc; text-align:left; }
+.ast { width:100%; border-collapse:collapse; font-size:8pt; direction:ltr; }
+.ast th { background:#0d3b66; color:#fff; padding:1mm 2.5mm; text-align:left; font-size:8pt; }
+.ast td { padding:1mm 2.5mm; border:0.3pt solid #d5d8dc; text-align:left; }
 .ast tr:nth-child(even) td { background:#f8f9fa; }
 .sir-s { color:#1e8449; font-weight:bold; }
 .sir-i { color:#b7770d; font-weight:bold; }
 .sir-r { color:#922b21; font-weight:bold; }
-/* Page 2 */
+/* Two-column grid */
 .pb { page-break-after: always; }
-.grid2 { display:table; width:100%; border-spacing:2mm; border-collapse:separate; direction:ltr; }
+.grid2 { display:table; width:100%; border-spacing:1mm; border-collapse:separate; direction:ltr; }
 .g2l { display:table-cell; width:49%; vertical-align:top; direction:ltr; text-align:left; }
 .g2r { display:table-cell; width:49%; vertical-align:top; direction:ltr; text-align:left; }
-/* Ranked */
-.ranked-row { padding:1.5mm 3mm; margin:0.8mm 0; border-radius:1.5mm; direction:ltr; text-align:left;
+/* Ranked rows — tighter */
+.ranked-row { padding:1mm 2.5mm; margin:0.4mm 0; border-radius:1.5mm; direction:ltr; text-align:left;
               display:flex; justify-content:space-between; align-items:center; page-break-inside:avoid; }
-.tier-sep { font-size:7pt; font-weight:bold; text-transform:uppercase; letter-spacing:0.4pt;
+.tier-sep { font-size:7.5pt; font-weight:bold; text-transform:uppercase; letter-spacing:0.3pt;
             direction:ltr; text-align:left;
-            padding:0.5mm 0; margin-top:2mm; border-top:0.8pt solid; }
-/* Alerts */
-.alert { padding:1.5mm 3mm; border-radius:1.5mm; margin:0.8mm 0; font-size:7.5pt; direction:ltr; text-align:left; }
+            padding:0.2mm 0; margin-top:0.8mm; border-top:0.8pt solid; }
+/* Alerts — tighter */
+.alert { padding:0.8mm 2.5mm; border-radius:1.5mm; margin:0.3mm 0; font-size:8.5pt; direction:ltr; text-align:left; }
 .al-warn   { background:#fef9e7; border:0.4pt solid #b7770d; color:#7d6608; }
 .al-danger { background:#fdedec; border:0.4pt solid #922b21; color:#78281f; }
 .al-info   { background:#eaf4fb; border:0.4pt solid #2980b9; color:#1a5276; }
-.score-bar { background:#e5e7eb; border-radius:1.5mm; height:4mm; width:100%; }
-.score-fill{ height:4mm; border-radius:1.5mm; }
-.compact-tbl { width:100%; border-collapse:collapse; font-size:7.5pt; direction:ltr; }
-.compact-tbl td { padding:1mm 3mm; border:0.3pt solid #d5d8dc; text-align:left; }
+.score-bar { background:#e5e7eb; border-radius:1.5mm; height:3mm; width:100%; }
+.score-fill{ height:3mm; border-radius:1.5mm; }
+.compact-tbl { width:100%; border-collapse:collapse; font-size:8.5pt; direction:ltr; }
+.compact-tbl td { padding:0.8mm 2.5mm; border:0.3pt solid #d5d8dc; text-align:left; }
 .compact-tbl .lbl { background:#f4f6f8; font-weight:bold; color:#0d3b66; width:40%; }
 .warn-val  { color:#b7770d; font-weight:bold; }
 .danger-val{ color:#922b21; font-weight:bold; }
 .no-break  { page-break-inside: avoid; }
-hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
+hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:0.6mm 0; }
 """
 
     def hdr_html(page_lbl: str) -> str:
@@ -3490,16 +3489,17 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
         if esbl_prob == "carbapenemase": mdr_pills += pill("CARBAPENEMASE","background:#922b21;color:#fff")
         elif esbl_prob == "ampc":        mdr_pills += pill("AmpC","background:#b7770d;color:#fff")
         elif esbl_prob in ("high","moderate"): mdr_pills += pill("ESBL+","background:#b7770d;color:#fff")
+        _pills_html = ("<div class='hdr-pills'>" + mdr_pills + "</div>") if mdr_pills else ""
         return f"""<div class="hdr">
   <div>
     <div class="hdr-lab">🔬 {_esc(lab_name)}</div>
     <div class="hdr-sub">{_esc(lab_city)} &nbsp;|&nbsp; Microbiology CDSS</div>
-    {"<div class='hdr-pills'>"+mdr_pills+"</div>" if mdr_pills else ""}
+    {_pills_html}
   </div>
   <div class="hdr-right">
-    <b style="font-size:8pt">{page_lbl}</b><br>
+    <b style="font-size:10pt">{page_lbl}</b><br>
     {_esc(date_in or now_str[:10])}<br>
-    <i>{_esc(organism)}</i> -- {_esc(patient_name or "--")}
+    <i>{_esc(organism)}</i> — {_esc(patient_name or "—")}
   </div>
 </div><div class="accent"></div><div class="content">"""
 
@@ -3532,10 +3532,10 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
             H.append(
                 f'<div class="ranked-row" style="{_ccss};border-radius:1.5mm;padding:1mm 2.5mm;margin:0.3mm 0">'
                 '<div style="flex:1">'
-                f'<b style="font-size:10pt;color:{_clr}">{i}. {_esc(_rd.get("name",""))}</b>'
+                f'<b style="font-size:10.5pt;color:{_clr}">{i}. {_esc(_rd.get("name",""))}</b>'
                 f'&ensp;<span class="ltr" style="background:#fff;border:0.4pt solid {_clr};color:{_clr};'
-                f'font-size:8pt;padding:0.2mm 2mm;border-radius:1mm">{_sirv}</span>'
-                f'&ensp;<span style="font-size:8pt;color:#555">{_rte}</span>'
+                f'font-size:8.5pt;padding:0.3mm 2.5mm;border-radius:1mm">{_sirv}</span>'
+                f'&ensp;<span style="font-size:8.5pt;color:#555">{_rte}</span>'
                 + (f'&ensp;<small style="color:#b7770d">⚠ {_rnl}</small>' if _rnl else "")
                 + '</div>'
                 f'<div>{pill(_raw, AWARE_PILL.get(_raw,""))}</div>'
@@ -3611,10 +3611,10 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
 
     # ── DOSE ADJUSTMENT / USE WITH CAUTION -- full detailed section ──────
     if warned:
-        H.append('<div class="sec-ttl" style="margin-top:2mm;color:#b7770d;border-bottom-color:#b7770d">'
+        H.append('<div class="sec-ttl" style="margin-top:0.6mm;color:#b7770d;border-bottom-color:#b7770d">'
                  f'{_T["dose_adj"]}</div>')
         if is_renal:
-            H.append(f'<div style="font-size:7pt;color:#888;margin-bottom:1mm">'
+            H.append(f'<div style="font-size:8.5pt;color:#888;margin-bottom:1mm">'
                      f'Patient CrCl = {cl_cr:.1f} ml/min</div>')
         for _wd in warned:
             _wname = _esc(_wd.get("name",""))
@@ -3626,27 +3626,27 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
                 "Reserve": "background:#922b21;color:#fff",
             }.get(_wd.get("aware",""), "background:#888;color:#fff")
             H.append(
-                f'<div style="margin:1mm 0;padding:1.5mm 3mm;border-radius:2mm;'
-                f'background:#fef9e7;border:1pt solid #b7770d;page-break-inside:avoid">'
-                f'<div style="display:flex;justify-content:space-between;align-items:center">'
-                f'<b style="font-size:9pt;color:#7d6608">{_wname}</b>'
-                f'<span style="padding:0.2mm 2mm;border-radius:2mm;font-size:6.5pt;'
+                '<div style="margin:0.3mm 0;padding:0.8mm 2.5mm;border-radius:2mm;'
+                'background:#fef9e7;border:1pt solid #b7770d;page-break-inside:avoid">'
+                '<div style="display:flex;justify-content:space-between;align-items:center">'
+                f'<b style="font-size:10.5pt;color:#7d6608">{_wname}</b>'
+                '<span style="padding:0.2mm 2mm;border-radius:2mm;font-size:8pt;'
                 f'font-weight:bold;{_waw_style}">{_waw}</span>'
-                f'</div>'
+                '</div>'
             )
             # Reason-specific detail
             if _wreason == "renal_adjustment":
                 _rn = _esc(_wd.get("renal_note","-"))
                 _rl = _wd.get("renal_limit","-")
                 H.append(
-                    f'<div style="font-size:7.5pt;color:#7d6608;margin-top:0.5mm">'
+                    f'<div style="font-size:9pt;color:#7d6608;margin-top:0.5mm">'
                     f'⚠ Renal dose adjustment required  |  Threshold: CrCl ≤ {_rl} ml/min</div>'
-                    f'<div style="font-size:7pt;color:#555;margin-top:0.3mm">{_rn}</div>'
+                    f'<div style="font-size:8.5pt;color:#555;margin-top:0.3mm">{_rn}</div>'
                 )
             elif _wreason == "intermediate_culture":
                 H.append(
-                    '<div style="font-size:7.5pt;color:#7d6608;margin-top:0.5mm">'
-                    '⚠ Intermediate (I) in culture result -- use only if no better option</div>'
+                    '<div style="font-size:9pt;color:#7d6608;margin-top:0.5mm">'
+                    '⚠ Intermediate (I) in culture result — use only if no better option</div>'
                 )
             elif _wreason == "esbl_bli_uti_only":
                 _esbl_txt = (_wd.get("esbl_note_en") if _EN and _wd.get("esbl_note_en")
@@ -3665,14 +3665,14 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
 
     # ── Interactions (compact) ─────────────────────────────────────────
     if interactions:
-        H.append('<div class="sec-ttl" style="margin-top:2mm">💊 Drug Interactions</div>'
+        H.append(f'<div class="sec-ttl" style="margin-top:0.6mm">{_T["interactions"]}</div>'
                  '<div class="alert al-warn">'
-                 + '<br>'.join(f'<span style="font-size:7.5pt">{_esc(ia)}</span>'
+                 + '<br>'.join(f'<span style="font-size:9pt">{_esc(ia)}</span>'
                                for ia in interactions[:4])
                  + '</div>')
 
-    # 2-column equal -- Treatment Duration LEFT, Pathogenicity RIGHT (mirrored layout)
-    H.append('<div class="grid2" style="margin-top:2mm">')
+    # 2-column equal — Treatment Duration LEFT, Pathogenicity RIGHT
+    H.append('<div class="grid2" style="margin-top:0.6mm">')
 
     # ── Treatment Duration (now left column) ──────────────────────────────
     H.append('<div class="g2l">')
@@ -3680,20 +3680,20 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
         d = duration_data
         H.append('<div class="sec-ttl">Treatment Duration</div>')
         std = d.get("standard_days", d.get("standard","?"))
-        H.append(f'<table class="compact-tbl">'
+        H.append('<table class="compact-tbl">'
                  f'<tr><td class="lbl">Protocol</td><td>{_esc(d.get("label",""))}</td></tr>'
-                 f'<tr><td class="lbl">Standard</td><td><b style="font-size:10pt">{std} days</b></td></tr>'
+                 f'<tr><td class="lbl">Standard</td><td><b style="font-size:12pt">{std} days</b></td></tr>'
                  f'<tr><td class="lbl">Range</td><td>{d.get("min_days","?")}–{d.get("max_days","?")} days</td></tr>'
                  f'<tr><td class="lbl">IV/PO Split</td><td class="ltr">IV:{d.get("iv_days",0)}d · PO:{d.get("po_days",0)}d</td></tr>'
-                 f'</table>')
+                 '</table>')
         if d.get("notes"):
-            H.append(f'<div class="alert al-info" style="font-size:7pt;margin-top:1mm">📋 {_esc(d["notes"][:160])}</div>')
+            H.append(f'<div class="alert al-info" style="font-size:8pt;margin-top:0.5mm">📋 {_esc(d["notes"][:160])}</div>')
         if d.get("follow_up_culture"):
-            H.append('<div class="alert al-warn" style="font-size:7pt">🔄 Follow-up culture recommended after treatment</div>')
-        H.append(f'<div style="font-size:6.5pt;color:#888;margin-top:1mm">📚 {_esc(d.get("ref",""))}</div>')
+            H.append('<div class="alert al-warn" style="font-size:8.5pt">🔄 Follow-up culture recommended after treatment</div>')
+        H.append(f'<div style="font-size:8pt;color:#888;margin-top:1mm">📚 {_esc(d.get("ref",""))}</div>')
     else:
         H.append('<div class="sec-ttl">Treatment Duration</div>')
-        H.append('<div class="alert al-info" style="font-size:7.5pt">Select severity level to see treatment duration</div>')
+        H.append('<div class="alert al-info" style="font-size:9pt">Select severity level to see treatment duration</div>')
     H.append('</div>')
 
     # ── Pathogenicity (now right column, expanded) ────────────────────────
@@ -3712,10 +3712,10 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
         # Score bar
         H.append(f'<div class="score-bar"><div class="score-fill" '
                  f'style="width:{sc}%;background:{clr2}"></div></div>')
-        H.append(f'<div style="font-size:9pt;margin:1mm 0;font-weight:bold;color:{clr2}">{sc}% -- {verd}</div>')
+        H.append(f'<div style="font-size:10pt;margin:0.5mm 0;font-weight:bold;color:{clr2}">{sc}% — {verd}</div>')
         # Interpretation
         if interp:
-            H.append(f'<div style="font-size:8pt;color:#444;margin-bottom:1mm">{interp[:160]}</div>')
+            H.append(f'<div style="font-size:9pt;color:#444;margin-bottom:0.5mm">{interp[:160]}</div>')
         # Flags
         flag_msgs = {
             "ABU_NO_TREAT":  ("al-warn",   "ABU -- Do NOT Treat (IDSA 2019)"),
@@ -3727,28 +3727,28 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
         }
         for fl, (cls, msg) in flag_msgs.items():
             if fl in flags:
-                H.append(f'<div class="alert {cls}" style="font-size:7pt;margin:0.3mm 0">{msg}</div>')
+                H.append(f'<div class="alert {cls}" style="font-size:8.5pt;margin:0.3mm 0">{msg}</div>')
         # Supporting factors (compact)
         if fpos:
-            H.append(f'<div style="font-size:7pt;color:#1e8449;margin-top:1mm"><b>{_T["supporting"]}</b></div>')
+            H.append(f'<div style="font-size:8.5pt;color:#1e8449;margin-top:1mm"><b>{_T["supporting"]}</b></div>')
             for f in fpos[:3]:
-                H.append(f'<div style="font-size:6.5pt;color:#1e8449">{_esc(f[:80])}</div>')
+                H.append(f'<div style="font-size:8.5pt;color:#1e8449">{_esc(f[:80])}</div>')
         # Against factors
         if fneg:
-            H.append(f'<div style="font-size:7pt;color:#b7770d;margin-top:0.5mm"><b>{_T["against"]}</b></div>')
+            H.append(f'<div style="font-size:8.5pt;color:#b7770d;margin-top:0.5mm"><b>{_T["against"]}</b></div>')
             for f in fneg[:3]:
-                H.append(f'<div style="font-size:6.5pt;color:#b7770d">{_esc(f[:80])}</div>')
+                H.append(f'<div style="font-size:8.5pt;color:#b7770d">{_esc(f[:80])}</div>')
         # Recommendations
         if recs:
-            H.append(f'<div style="font-size:7pt;font-weight:bold;margin-top:1mm">{_T["recs"]}</div>')
+            H.append(f'<div style="font-size:8.5pt;font-weight:bold;margin-top:0.5mm">{_T["recs"]}</div>')
             for r in recs[:3]:
-                H.append(f'<div style="font-size:7pt">• {r[:100]}</div>')
+                H.append(f'<div style="font-size:8.5pt">• {r[:100]}</div>')
     else:
         # Non-urine: show ESBL / MDR / resistance summary instead of pathogenicity
         _is_urine_pdf = "urine" in (specimen or "").lower()
         if _is_urine_pdf:
             H.append('<div class="sec-ttl">Pathogenicity Assessment</div>')
-            H.append('<div class="alert al-info" style="font-size:7.5pt">Run Pathogenicity Assessment in the app to see score</div>')
+            H.append('<div class="alert al-info" style="font-size:9pt">Run Pathogenicity Assessment in the app to see score</div>')
         else:
             H.append('<div class="sec-ttl">Organism Resistance Profile</div>')
             # ESBL / Mechanism
@@ -3758,32 +3758,33 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
                 _ec3 = esbl_result.get("confidence", 0)
                 _ed3 = _esc(esbl_result.get("detail",""))
                 if _ep3 == "carbapenemase":
-                    H.append(f'<div class="alert al-danger" style="font-size:7pt"><b>🚨 {_em3}</b> ({_ec3}%)</div>')
-                    H.append(f'<div style="font-size:6.5pt;color:#922b21">{_ed3[:120]}</div>')
+                    H.append(f'<div class="alert al-danger" style="font-size:8.5pt"><b>🚨 {_em3}</b> ({_ec3}%)</div>')
+                    H.append(f'<div style="font-size:8pt;color:#922b21">{_ed3[:130]}</div>')
                 elif _ep3 in ("high","ampc"):
                     _l3 = "AmpC" if _ep3 == "ampc" else "ESBL+"
-                    H.append(f'<div class="alert al-danger" style="font-size:7pt"><b>⚠️ {_l3}</b> ({_ec3}%) — {_em3}</div>')
-                    H.append(f'<div style="font-size:6.5pt;color:#555">{_ed3[:120]}</div>')
+                    H.append(f'<div class="alert al-danger" style="font-size:8.5pt"><b>⚠️ {_l3}</b> ({_ec3}%) — {_em3}</div>')
+                    H.append(f'<div style="font-size:8pt;color:#555">{_ed3[:130]}</div>')
                 elif _ep3 == "moderate":
-                    H.append(f'<div class="alert al-warn" style="font-size:7pt"><b>🔶 ESBL Suspected</b> ({_ec3}%)</div>')
-                    H.append(f'<div style="font-size:6.5pt;color:#555">{_ed3[:120]}</div>')
+                    H.append(f'<div class="alert al-warn" style="font-size:8.5pt"><b>🔶 ESBL Suspected</b> ({_ec3}%)</div>')
+                    H.append(f'<div style="font-size:8pt;color:#555">{_ed3[:130]}</div>')
             # MDR level
             if mdr_result and mdr_result.get("level"):
                 _ml3 = mdr_result["level"]
                 _mi3 = MDR_INFO.get(_ml3, {})
                 _clr3 = "#922b21" if _ml3 in ("XDR","PDR") else "#b7770d"
-                H.append(f'<div style="font-size:7.5pt;font-weight:bold;color:{_clr3};margin-top:1mm">'
+                H.append(f'<div style="font-size:9pt;font-weight:bold;color:{_clr3};margin-top:1mm">'
                          f'{_mi3.get("icon","")} {_mi3.get("label","")}</div>')
-                H.append(f'<div style="font-size:6.5pt;color:#555">'
-                         f'Resistant {mdr_result["resistant_count"]}/{mdr_result["total_tested"]} categories</div>')
+                H.append(f'<div style="font-size:8pt;color:#555">'
+                         f'Resistant {mdr_result["resistant_count"]}/{mdr_result["total_tested"]} categories: '
+                         f'{_esc(", ".join(mdr_result.get("resistant_categories",[])[:4]))}</div>')
             # Phenotypes
             if phenotypes:
                 for _ph3 in phenotypes[:3]:
                     _phn3 = _esc(_ph3.get("phenotype",""))
-                    H.append(f'<div style="font-size:7pt;color:#6e2fa0;margin-top:0.5mm">🔬 {_phn3}</div>')
+                    H.append(f'<div style="font-size:8.5pt;color:#6e2fa0;margin-top:0.5mm">🔬 {_phn3}</div>')
             # No resistance info at all
             if not esbl_result and not (mdr_result and mdr_result.get("level")) and not phenotypes:
-                H.append('<div class="alert al-info" style="font-size:7pt">No resistance markers detected — see full profile on Page 2</div>')
+                H.append('<div class="alert al-info" style="font-size:9pt">No resistance markers detected in current AST panel.</div>')
     H.append('</div></div>')
 
     # ── PREGNANCY -- USE WITH CAUTION  (dedicated section) ─────────────────
@@ -3792,7 +3793,7 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
         H.append(
             '<div class="sec-ttl" style="color:#7d3c98;border-bottom-color:#7d3c98">'
             f'{_T["pregnancy"]} &nbsp;'
-            '<span style="font-size:7pt;font-weight:normal;color:#888">'
+            '<span style="font-size:8pt;font-weight:normal;color:#888">'
             f'{_T["preg_sub"]}</span></div>'
         )
         for _pw in preg_warn_items:
@@ -3803,11 +3804,11 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
             if _EN and _pw.get("preg_note_en"):
                 _pnote = _pw.get("preg_note_en").strip()
             H.append(
-                f'<div style="margin:1.5mm 0;padding:2mm 3mm;border-radius:2mm;'
+                f'<div style="margin:0.3mm 0;padding:0.8mm 2.5mm;border-radius:2mm;'
                 f'border:1pt solid #c39bd3;background:#f5eef8;page-break-inside:avoid">'
                 f'<div style="display:flex;justify-content:space-between;align-items:center">'
                 f'<b style="font-size:9pt;color:#6c3483">{_pname}</b>'
-                f'<span style="padding:0.3mm 2.5mm;border-radius:2mm;font-size:6.5pt;'
+                f'<span style="padding:0.3mm 2.5mm;border-radius:2mm;font-size:8pt;'
                 f'font-weight:bold;background:#7d3c98;color:#fff">{_paw}</span>'
                 f'</div>'
             )
@@ -3827,7 +3828,7 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
                     else:
                         _lcolor = "#444";   _lbg = "transparent"
                     H.append(
-                        f'<div style="font-size:7.5pt;color:{_lcolor};'
+                        f'<div style="font-size:9pt;color:{_lcolor};'
                         f'background:{_lbg};padding:0.3mm 2mm;margin-top:0.5mm;'
                         f'border-radius:1mm">{_esc(_xlate_preg_note(_line))}</div>'
                     )
@@ -3835,168 +3836,39 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:2mm 0; }
 
     # Combination + Hepatic (compact)
     if combo_suggestions:
-        H.append('<hr class="dv"><div class="sec-ttl">Combination Therapy -- MDR</div>')
+        H.append('<hr class="dv" style="margin:0.5mm 0"><div class="sec-ttl">Combination Therapy — MDR</div>')
         for cs in combo_suggestions[:2]:
             data = cs["data"]
-            H.append(f'<div class="alert al-danger" style="font-size:7pt">'
-                     f'<b>{_esc(data["urgency"])} -- {_esc(data["title"])}</b></div>')
+            H.append(f'<div class="alert al-danger" style="font-size:8.5pt">'
+                     f'<b>{_esc(data["urgency"])} — {_esc(data["title"])}</b></div>')
             for opt in data["options"][:3]:
                 avoid = "AVOID" in opt.get("evidence","") or "AVOID" in opt["combo"].upper()
-                H.append(f'<div style="font-size:7pt;margin:0.3mm 0;color:{"#922b21" if avoid else "#1a1a2e"}">'
+                H.append(f'<div style="font-size:8.5pt;margin:0.3mm 0;color:{"#922b21" if avoid else "#1a1a2e"}">'
                          f'{"🚫 " if avoid else "• "}<b>{_esc(opt["combo"])}</b>'
                          f' <span style="color:#888">({_esc(opt["evidence"])})</span></div>')
 
     if is_hepatic and hepatic_recs:
         action_recs = [r for r in hepatic_recs if r.get("requires_action")][:3]
         if action_recs:
-            H.append(f'<hr class="dv"><div class="sec-ttl">Hepatic Dosing -- CP-{_esc(child_pugh)}</div>')
+            H.append(f'<hr class="dv" style="margin:0.5mm 0"><div class="sec-ttl">Hepatic Dosing — CP-{_esc(child_pugh)}</div>')
             for r in action_recs:
                 cls4 = "danger-val" if "Avoid" in r["level"] else "warn-val"
-                H.append(f'<div style="font-size:7.5pt;margin:0.3mm 0">'
+                H.append(f'<div style="font-size:9pt;margin:0.3mm 0">'
                          f'<b class="{cls4}">{_esc(r["name"])}</b>: {_esc(r["recommendation"])}</div>')
 
     # Footer
-    H.append(f"""<hr class="dv" style="margin-top:3mm">
+    H.append("""<hr class="dv" style="margin-top:1mm">
 <div class="grid2">
-  <div class="g2l" style="font-size:6.5pt;color:#666">
+  <div class="g2l" style="font-size:8pt;color:#666">
     <b>References:</b> CLSI 2026 | EUCAST 2026 | IDSA AMR 2025 | WHO AWaRe 2025 | Sanford 2025 | BNF 2025 | Egypt Nat. Guidelines
   </div>
-  <div class="g2r" style="font-size:6.5pt;color:#666">
+  <div class="g2r" style="font-size:8pt;color:#666">
     <b>Disclaimer:</b> Clinical decision support only. Treatment decisions are the sole responsibility of the treating physician.
   </div>
 </div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:1mm">
-  Dr. Hussein Ali &nbsp;|&nbsp; {_esc(lab_name)} &nbsp;|&nbsp; Microbiology CDSS
-</div>
-</div>"""
+
+</div></body></html>"""
 )
-
-    # ════════════════════════════════════════════════════════════════════════════
-    # PAGE 2: ORGANISM RESISTANCE PROFILE + CLINICAL NOTES
-    # ════════════════════════════════════════════════════════════════════════════
-    H.append('<div class="pb"></div>')  # page break
-    H.append(hdr_html("RESISTANCE PROFILE"))
-    H.append('<div class="content">')
-
-    # ── Resistance Classification (MDR/XDR/PDR) ────────────────────────────
-    if mdr_result and mdr_result.get("level"):
-        _mi2 = MDR_INFO.get(mdr_result["level"], {})
-        _p2_clr = "#922b21" if mdr_result["level"] in ("XDR","PDR") else "#b7770d"
-        H.append(f'<div class="sec-ttl" style="color:{_p2_clr};border-bottom-color:{_p2_clr}">Resistance Classification — {mdr_result["level"]}</div>')
-        H.append(f'<div class="alert al-danger" style="font-size:8.5pt">'
-                 f'<b>{_mi2.get("icon","")} {_mi2.get("label","")}</b><br>'
-                 f'<span style="font-size:8pt">{_esc(_mi2.get("detail",""))}</span><br>'
-                 f'<span style="font-size:7.5pt;color:#555">Resistant categories ({mdr_result["resistant_count"]}/{mdr_result["total_tested"]}): '
-                 f'{_esc(", ".join(mdr_result.get("resistant_categories",[])))}</span></div>')
-        # MDR implications
-        _mdr_lvl = mdr_result["level"]
-        _mdr_implications = {
-            "MDR": ("⚠️ Multi-Drug Resistant — consider combination therapy for severe infections. "
-                    "Carbapenem-based regimen if no contraindication. "
-                    "Infectious disease consultation recommended."),
-            "XDR": ("🚨 Extensively Drug Resistant — very limited therapeutic options. "
-                    "Reserve antibiotics (Colistin / Ceftazidime-Avibactam / Fosfomycin) may be required. "
-                    "Urgent infectious disease consultation. Monitor for treatment response closely."),
-            "PDR": ("🆘 Pan-Drug Resistant — no standard antibiotic options. "
-                    "Contact infectious disease specialist immediately. "
-                    "Combination salvage therapy (Colistin + Fosfomycin ± Rifampicin) may be attempted."),
-        }
-        if _mdr_lvl in _mdr_implications:
-            H.append(f'<div style="font-size:8pt;color:#555;margin:1mm 0 2mm">{_esc(_mdr_implications[_mdr_lvl])}</div>')
-    else:
-        H.append('<div class="sec-ttl">Resistance Classification</div>')
-        H.append('<div class="alert al-info" style="font-size:8pt">No MDR/XDR/PDR pattern detected with the provided AST panel. '
-                 'Susceptibility pattern appears non-MDR.</div>')
-
-    # ── ESBL / AmpC / Carbapenemase ─────────────────────────────────────────
-    if esbl_result and esbl_result.get("probability") not in ("low", None):
-        _ep  = esbl_result.get("probability")
-        _em2 = esbl_result.get("mechanism", "")
-        _ec  = esbl_result.get("confidence", 0)
-        _ed  = _esc(esbl_result.get("detail",""))
-        _ea  = _esc(esbl_result.get("action",""))
-        H.append('<div class="sec-ttl" style="color:#922b21;border-bottom-color:#922b21">β-Lactamase / Resistance Mechanism</div>')
-        if _ep == "carbapenemase":
-            H.append(f'<div class="alert al-danger" style="font-size:8.5pt">'
-                     f'<b>🚨 {_esc(_em2)}</b> &nbsp;<span style="font-size:7.5pt;color:#888">(Confidence: {_ec}%)</span><br>'
-                     f'<span style="font-size:8pt">{_ed[:200]}</span></div>')
-            H.append('<div style="font-size:8pt;color:#555;margin:1mm 0 2mm">'
-                     '⚠️ Carbapenem-resistant organism: avoid ALL carbapenems. '
-                     'Active agents limited to: Colistin, Ceftazidime-Avibactam (KPC/OXA-48), '
-                     'Aztreonam-Avibactam (MBL), Fosfomycin (UTI only), Temocillin.</div>')
-        elif _ep in ("high", "ampc"):
-            _lbl2 = "AmpC β-Lactamase" if _ep == "ampc" else "ESBL Producer (High Confidence)"
-            H.append(f'<div class="alert al-danger" style="font-size:8.5pt">'
-                     f'<b>⚠️ {_lbl2}</b> &nbsp;<span style="font-size:7.5pt;color:#888">(Confidence: {_ec}%)</span><br>'
-                     f'<span style="font-size:8pt">{_ed[:200]}</span></div>')
-            if _ep == "ampc":
-                H.append('<div style="font-size:8pt;color:#555;margin:1mm 0 2mm">'
-                         'AmpC: all penicillins + cephalosporins (including cephamycins) unreliable. '
-                         'BLI combinations (Pip-Tazo, Amox-Clav) ineffective. '
-                         'Carbapenems are drug of choice. Cefepime may retain activity — verify MIC.</div>')
-            else:
-                H.append('<div style="font-size:8pt;color:#555;margin:1mm 0 2mm">'
-                         'ESBL: all penicillins + cephalosporins + aztreonam should be considered resistant '
-                         'regardless of in-vitro susceptibility (inoculum effect). '
-                         'Carbapenems are first choice for severe infections. '
-                         'BLI combos (Pip-Tazo, Amox-Clav) only for uncomplicated UTI if S and low inoculum.</div>')
-        elif _ep == "moderate":
-            H.append(f'<div class="alert al-warn" style="font-size:8.5pt">'
-                     f'<b>🔶 ESBL Confirmation Recommended</b> &nbsp;<span style="font-size:7.5pt;color:#888">(Confidence: {_ec}%)</span><br>'
-                     f'<span style="font-size:8pt">{_ed[:200]}</span></div>')
-            H.append('<div style="font-size:8pt;color:#555;margin:1mm 0 2mm">'
-                     'Perform confirmatory testing: Double-Disk Synergy Test (DDST) or PCR. '
-                     'Treat as ESBL until confirmed otherwise for serious infections.</div>')
-        if _ea:
-            H.append(f'<div class="alert al-info" style="font-size:8pt">📋 Recommended Action: {_ea[:200]}</div>')
-
-    # ── Resistance Phenotypes (MRSA / CRE / CRAB / CRPA etc.) ──────────────
-    if phenotypes:
-        H.append('<div class="sec-ttl" style="color:#6e2fa0;border-bottom-color:#6e2fa0">Detected Resistance Phenotypes</div>')
-        for _ph in phenotypes[:6]:
-            _ph_name = _esc(_ph.get("phenotype",""))
-            _ph_det  = _esc(_ph.get("detail",""))
-            _ph_imp  = _esc(_ph.get("implication","") or _ph.get("treatment",""))
-            _ph_clr  = "#922b21" if any(x in _ph_name for x in ["CRE","CRAB","CRPA","PDR","XDR"]) else "#6e2fa0"
-            H.append(
-                f'<div style="margin:1mm 0;padding:1.5mm 3mm;border-radius:2mm;'
-                f'background:#f5eef8;border:0.8pt solid {_ph_clr};page-break-inside:avoid">'
-                f'<b style="font-size:9.5pt;color:{_ph_clr}">{_ph_name}</b><br>'
-                + (f'<span style="font-size:8pt;color:#444">{_ph_det[:160]}</span><br>' if _ph_det else "")
-                + (f'<span style="font-size:7.5pt;color:#1a5276">💊 {_ph_imp[:160]}</span>' if _ph_imp else "")
-                + '</div>'
-            )
-
-    # ── Summary table: Dose-adjustment warnings on page 2 ──────────────────
-    if warned:
-        H.append(f'<div class="sec-ttl" style="margin-top:2mm;color:#b7770d;border-bottom-color:#b7770d">{_T["dose_adj"]}</div>')
-        for _wd in warned:
-            _wnm    = _esc(_wd.get("name", ""))
-            _wreason = _wd.get("warning_reason", "")
-            if _wreason == "intermediate_culture":
-                H.append(f'<div class="alert al-warn" style="font-size:7.5pt"><b>{_wnm}</b> — Intermediate (I) in culture, use only if no better option.</div>')
-            elif _wreason == "esbl_bli_uti_only":
-                _etxt = (_wd.get("esbl_note_en") if _EN and _wd.get("esbl_note_en")
-                         else _wd.get("esbl_note", "ESBL — BLI combo for uncomplicated UTI only"))
-                H.append(f'<div class="alert al-warn" style="font-size:7.5pt"><b>{_wnm}</b> — {_esc(_etxt[:150])}</div>')
-            else:
-                _rn2 = _esc(_wd.get("renal_note", ""))
-                H.append(f'<div class="alert al-warn" style="font-size:7.5pt"><b>{_wnm}</b> — {_rn2[:150]}</div>')
-
-    # Page 2 footer
-    H.append(f"""<hr class="dv" style="margin-top:3mm">
-<div class="grid2">
-  <div class="g2l" style="font-size:6.5pt;color:#666">
-    <b>References:</b> CLSI 2026 | EUCAST 2026 | IDSA AMR 2025 | WHO AWaRe 2025 | Sanford 2025 | BNF 2025 | Egypt Nat. Guidelines
-  </div>
-  <div class="g2r" style="font-size:6.5pt;color:#666">
-    <b>Disclaimer:</b> Clinical decision support only. Treatment decisions are the sole responsibility of the treating physician.
-  </div>
-</div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:1mm">
-  Dr. Hussein Ali &nbsp;|&nbsp; {_esc(lab_name)} &nbsp;|&nbsp; Microbiology CDSS — Page 2
-</div>
-</div></body></html>""")
 
     try:
         return _wp.HTML(string="".join(H)).write_pdf()
@@ -5167,9 +5039,11 @@ if uploaded:
                     "تصنيف MDR/XDR/PDR + آليات المقاومة (ESBL / AmpC / Carbapenemase)"
                 )
 
-                _mdr_r  = classify_mdr(organism_type, sir_map) if sir_map else {"level": None}
-                _esbl_r = predict_esbl(organism_type, sir_map) if sir_map else {"probability": None}
-                _ph_r   = detect_resistance_phenotypes(organism_type, sir_map) if sir_map else []
+                # sir_map may not be defined yet at this render point — read from session_state
+                _sir_map_now = st.session_state.get("sir_map_edited") or {}
+                _mdr_r  = classify_mdr(organism_type, _sir_map_now) if _sir_map_now else {"level": None}
+                _esbl_r = predict_esbl(organism_type, _sir_map_now) if _sir_map_now else {"probability": None}
+                _ph_r   = detect_resistance_phenotypes(organism_type, _sir_map_now) if _sir_map_now else []
 
                 # ── MDR / XDR / PDR ────────────────────────────────────────────
                 if _mdr_r.get("level"):
@@ -5189,7 +5063,7 @@ if uploaded:
                     for _w in _mdr_r.get("warnings", []):
                         st.caption(_w)
                 else:
-                    if sir_map:
+                    if _sir_map_now:
                         st.success("✅ لا يوجد تصنيف MDR/XDR/PDR -- الكائن حساس لمعظم الفئات.")
                     else:
                         st.info("ℹ️ أدخل نتائج المزرعة (S/I/R) لتحليل المقاومة.")
@@ -5236,12 +5110,12 @@ if uploaded:
                             st.caption(f"Evidence: {', '.join(_ph['matched_markers'])}")
 
                 # ── Summary stats ──────────────────────────────────────────────
-                if sir_map:
-                    _s = sum(1 for v in sir_map.values() if v == "S")
-                    _i = sum(1 for v in sir_map.values() if v == "I")
-                    _r = sum(1 for v in sir_map.values() if v == "R")
+                if _sir_map_now:
+                    _s = sum(1 for v in _sir_map_now.values() if v == "S")
+                    _i = sum(1 for v in _sir_map_now.values() if v == "I")
+                    _r = sum(1 for v in _sir_map_now.values() if v == "R")
                     _sc1, _sc2, _sc3, _sc4 = st.columns(4)
-                    _sc1.metric("Total Tested", len(sir_map))
+                    _sc1.metric("Total Tested", len(_sir_map_now))
                     _sc2.metric("Sensitive", _s)
                     _sc3.metric("Intermediate", _i)
                     _sc4.metric("Resistant", _r)
