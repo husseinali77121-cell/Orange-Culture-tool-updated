@@ -2865,16 +2865,15 @@ AST_QC_RULES = [
             any(s.get(d)=="S" for d in [
                 "Cefuroxime","Cefuroxime sodium","Cephalexin","Cefaclor",
                 "Cefadroxil","Cefixime","Cefoperazone","Cefoperazone + Sulbactam"
-            ]) and
-            not all(
-                s.get(d) in ("R", None)
-                for d in ["Cefuroxime","Cefuroxime sodium","Cephalexin","Cefepime",
-                           "Ceftazidime","Cefotaxime","Cefixime","Cefoperazone"]
-                if s.get(d) is not None
-            )
+            ])
         ),
+        "trigger_fn": lambda s: [
+            d for d in ["Cefuroxime","Cefuroxime sodium","Cephalexin","Cefaclor",
+                        "Cefadroxil","Cefixime","Cefoperazone","Cefoperazone + Sulbactam"]
+            if s.get(d) == "S"
+        ],
         "severity": "warning",
-        "message": "Ceftriaxone-R مع Cephalosporin-S -- Inoculum Effect محتمل في ESBL.",
+        "message": "Ceftriaxone-R مع {drugs}-S -- Inoculum Effect محتمل في ESBL.",
         "fix": "ESBL Inoculum Effect: الحساسية في الـ Lab قد لا تنعكس في الجسم -- تجنب جميع Cephalosporins حتى لو S في الـ AST (EUCAST 2026).",
     },
     {
@@ -2915,15 +2914,228 @@ def run_ast_qc(organism: str, sir_map: Dict[str, str]) -> List[Dict[str, Any]]:
                 continue
         try:
             if rule["condition"](sir_map):
+                _msg = rule["message"]
+                if "trigger_fn" in rule and "{drugs}" in _msg:
+                    _triggered = rule["trigger_fn"](sir_map)
+                    _drugs_str = " / ".join(_triggered) if _triggered else "Cephalosporin"
+                    _msg = _msg.format(drugs=_drugs_str)
                 issues.append({
                     "id":       rule["id"],
                     "severity": rule["severity"],
-                    "message":  rule["message"],
+                    "message":  _msg,
                     "fix":      rule["fix"],
                 })
         except Exception:
             continue
     return issues
+
+
+
+
+def compute_qa_confidence(
+    qc_issues: List[Dict[str, Any]],
+    sir_map: Dict[str, str],
+    organism: str,
+) -> Dict[str, Any]:
+    """
+    Confidence Score للتوصية العلاجية — بناءً على:
+      1. عدد وشدة الـ QA issues (errors تخفض أكتر من warnings)
+      2. اكتمال الـ AST panel (عدد المضادات المختبرة)
+    يرجع: {level, score, icon, color, reasons}
+    """
+    score   = 100
+    reasons = []
+
+    n_errors   = sum(1 for i in qc_issues if i.get("severity") == "error")
+    n_warnings = sum(1 for i in qc_issues if i.get("severity") == "warning")
+
+    if n_errors:
+        score -= n_errors * 30
+        reasons.append(f"{n_errors} تناقض حرج (error) في نتائج الـ AST")
+    if n_warnings:
+        score -= n_warnings * 12
+        reasons.append(f"{n_warnings} ملاحظة (warning) تستدعي المراجعة")
+
+    n_tested = len(sir_map) if sir_map else 0
+    if n_tested == 0:
+        score -= 50
+        reasons.append("لا توجد نتائج AST مدخلة")
+    elif n_tested <= 2:
+        score -= 35
+        reasons.append(f"عدد المضادات المختبرة قليل جداً ({n_tested}) -- لا يكفي لتوصية موثوقة")
+    elif n_tested < 5:
+        score -= 20
+        reasons.append(f"عدد المضادات المختبرة قليل ({n_tested}) -- قد لا يغطي كل الخيارات العلاجية")
+    elif n_tested < 8:
+        score -= 8
+        reasons.append(f"عدد المضادات المختبرة محدود ({n_tested})")
+
+    score = max(0, min(100, score))
+
+    if score >= 80:
+        level, icon, color = "High Confidence",     "🟢", "#1e8449"
+    elif score >= 50:
+        level, icon, color = "Moderate Confidence", "🟡", "#b7770d"
+    else:
+        level, icon, color = "Low Confidence",      "🔴", "#922b21"
+
+    if not reasons:
+        reasons.append("لا توجد مشاكل مكتشفة -- تقرير AST مكتمل ومتسق")
+
+    return {
+        "level":      level,  "icon":  icon,  "color": color,
+        "score":      score,  "reasons": reasons,
+        "n_errors":   n_errors, "n_warnings": n_warnings, "n_tested": n_tested,
+    }
+
+
+def generate_qa_report_pdf(
+    organism: str,
+    specimen: str,
+    sir_map: Dict[str, str],
+    qc_issues: List[Dict[str, Any]],
+    confidence: Dict[str, Any],
+    microbiologist: str = "",
+    lab_id: str = "",
+    patient_ref: str = "",
+) -> Optional[bytes]:
+    """
+    تقرير AST-QA PDF منفصل تماماً عن تقرير الطبيب.
+    للأرشفة الداخلية ومراجعة الجودة من قِبل الميكروبيولوجي فقط.
+    لا يُعرض ولا يُرسل للطبيب المعالج.
+    """
+    if not WEASYPRINT_AVAILABLE or _wp is None:
+        return None
+
+    _now = datetime.now().strftime("%Y-%m-%d  %H:%M")
+
+    H: List[str] = []
+    H.append("""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+@page { size:A4; margin:12mm 14mm; }
+body { font-family:'Segoe UI',Tahoma,Arial,sans-serif; color:#1a1a2e; font-size:10pt; }
+.hdr { border-bottom:2px solid #6e2fa0; padding-bottom:3mm; margin-bottom:4mm; }
+.hdr-title { font-size:16pt; font-weight:bold; color:#6e2fa0; }
+.hdr-sub   { font-size:9pt; color:#888; margin-top:1mm; }
+.meta-row  { display:flex; justify-content:space-between; font-size:9pt; margin-bottom:3mm;
+             background:#f7f5fb; padding:2.5mm 3mm; border-radius:2mm; }
+.sec-ttl   { font-size:11pt; font-weight:bold; color:#6e2fa0;
+             border-bottom:1px solid #ddd; padding-bottom:1mm; margin:4mm 0 2mm 0; }
+.conf-box  { padding:3mm; border-radius:2mm; margin-bottom:4mm; }
+.issue     { padding:2mm 3mm; margin:1.5mm 0; border-radius:1.5mm; font-size:9pt; line-height:1.5; }
+.err       { background:#fdf2f2; border-left:3px solid #922b21; }
+.warn      { background:#fef9e7; border-left:3px solid #b7770d; }
+.ast-tbl   { width:100%; border-collapse:collapse; font-size:8.5pt; margin-top:2mm; }
+.ast-tbl th{ background:#6e2fa0; color:#fff; padding:1.5mm 2mm; text-align:left; }
+.ast-tbl td{ padding:1.2mm 2mm; border-bottom:1px solid #eee; }
+.sir-S     { color:#1e8449; font-weight:bold; }
+.sir-I     { color:#b7770d; font-weight:bold; }
+.sir-R     { color:#922b21; font-weight:bold; }
+.footer    { margin-top:6mm; padding-top:2mm; border-top:1px solid #ddd;
+             font-size:7.5pt; color:#888; }
+.confidential { background:#fdf2f2; color:#922b21; font-weight:bold;
+                text-align:center; padding:1.5mm; border-radius:1.5mm;
+                font-size:8.5pt; margin-bottom:3mm; }
+</style></head><body>""")
+
+    H.append(
+        '<div class="confidential">'
+        '🔒 INTERNAL LABORATORY USE ONLY &nbsp;—&nbsp; '
+        'NOT FOR PHYSICIAN OR PATIENT DISTRIBUTION'
+        '</div>'
+    )
+
+    H.append(
+        '<div class="hdr">'
+        '<div class="hdr-title">🔬 AST Quality Assurance Report</div>'
+        '<div class="hdr-sub">Laboratory Consistency &amp; Confidence Audit — Internal QA Archive</div>'
+        '</div>'
+    )
+
+    H.append(
+        '<div class="meta-row">'
+        f'<div><b>Organism:</b>&nbsp;{_esc(organism or "—")}</div>'
+        f'<div><b>Specimen:</b>&nbsp;{_esc(specimen or "—")}</div>'
+        f'<div><b>Generated:</b>&nbsp;{_esc(_now)}</div>'
+        '</div>'
+    )
+    H.append(
+        '<div class="meta-row">'
+        f'<div><b>Microbiologist:</b>&nbsp;{_esc(microbiologist or "—")}</div>'
+        f'<div><b>Patient Ref:</b>&nbsp;{_esc(patient_ref or "—")}</div>'
+        f'<div><b>Lab ID:</b>&nbsp;{_esc(lab_id or "—")}</div>'
+        '</div>'
+    )
+
+    # ── Confidence Score ──────────────────────────────────────────────
+    H.append('<div class="sec-ttl">📊 Recommendation Confidence Score</div>')
+    H.append(
+        f'<div class="conf-box" style="background:{confidence["color"]}18;'
+        f'border:1.5px solid {confidence["color"]}">'
+        f'<div style="font-size:13pt;font-weight:bold;color:{confidence["color"]}">'
+        f'{confidence["icon"]} {_esc(confidence["level"])} — {confidence["score"]}/100</div>'
+        '<ul style="margin:2mm 0 0 4mm;padding:0;font-size:9pt">'
+        + "".join(f'<li>{_esc(r)}</li>' for r in confidence["reasons"])
+        + '</ul></div>'
+    )
+    H.append(
+        f'<div style="font-size:8pt;color:#888;margin-bottom:3mm">'
+        f'Errors: <b>{confidence["n_errors"]}</b> &nbsp;|&nbsp; '
+        f'Warnings: <b>{confidence["n_warnings"]}</b> &nbsp;|&nbsp; '
+        f'Antibiotics tested: <b>{confidence["n_tested"]}</b>'
+        '</div>'
+    )
+
+    # ── QC Issues ────────────────────────────────────────────────────
+    H.append(f'<div class="sec-ttl">🔍 AST-QA Findings ({len(qc_issues)})</div>')
+    if not qc_issues:
+        H.append(
+            '<div style="font-size:9.5pt;color:#1e8449">'
+            '✅ All AST consistency checks passed. No issues detected.'
+            '</div>'
+        )
+    else:
+        for issue in qc_issues:
+            cls  = "err" if issue["severity"] == "error" else "warn"
+            icon = "❌"  if issue["severity"] == "error" else "⚠️"
+            H.append(
+                f'<div class="issue {cls}">'
+                f'<b>{icon} [{_esc(issue["id"])}] {_esc(issue["severity"].upper())}</b><br>'
+                f'{_esc(issue["message"])}<br>'
+                f'<span style="color:#555">✏️ {_esc(issue["fix"])}</span>'
+                '</div>'
+            )
+
+    # ── Full AST Panel ────────────────────────────────────────────────
+    H.append('<div class="sec-ttl">🧪 Full AST Panel as Entered</div>')
+    if sir_map:
+        H.append(
+            '<table class="ast-tbl">'
+            '<tr><th>Antibiotic</th><th>Result</th></tr>'
+        )
+        for drug, result in sorted(sir_map.items()):
+            sir_cls = f"sir-{result}" if result in ("S","I","R") else ""
+            H.append(
+                f'<tr><td>{_esc(drug)}</td>'
+                f'<td class="{sir_cls}">{_esc(result)}</td></tr>'
+            )
+        H.append('</table>')
+    else:
+        H.append('<div style="font-size:9pt;color:#888">No AST data recorded.</div>')
+
+    H.append(
+        '<div class="footer">'
+        'Generated by Orange Lab AST-QA Engine&nbsp;|&nbsp;'
+        'EUCAST Expert Rules v3.3 / CLSI M100 2026<br>'
+        'This document is for internal laboratory quality control and audit only. '
+        'It must not be shared with referring physicians or included in the patient report.'
+        '</div>'
+    )
+    H.append('</body></html>')
+
+    try:
+        return _wp.HTML(string="".join(H)).write_pdf()
+    except Exception:
+        return None
 
 
 # =========================================================
@@ -3482,6 +3694,12 @@ def generate_pdf_html_report(
     mdr_class = mdr_result.get("level","") if mdr_result else ""
     ph_labels = [p.get("phenotype","") for p in phenotypes]
     esbl_prob = esbl_result.get("probability","low")
+    esbl_conf = esbl_result.get("confidence", 0) if esbl_result else 0
+    # Header pills must reflect only confirmed/high-confidence findings —
+    # weak/fallback inferences (e.g. "Possible MRSA" without Oxacillin/Cefoxitin
+    # confirmation) stay in the body detail, not the prominent header badge.
+    _WEAK_HEADER_PHENOTYPES = {"Possible MRSA"}
+    _hdr_ph_labels = [p for p in ph_labels if p not in _WEAK_HEADER_PHENOTYPES]
     # Flags for Avoid-reason tagging (derived from passed-in results)
     _is_esbl_like     = esbl_prob in ("high", "ampc")
     _is_carbapenemase = esbl_prob == "carbapenemase"
@@ -3559,13 +3777,32 @@ body { font-family: 'Amiri','Noto Naskh Arabic','DejaVu Sans',Arial,sans-serif;
 hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:0.6mm 0; }
 """
 
+    # ── Specimen short label for header (lab-report convention) ───────────
+    SPECIMEN_SHORT = {
+        "Urine":       "Urine C/S",
+        "Blood":       "Blood C/S",
+        "Sputum":      "Sputum C/S",
+        "Wound Swab":  "Wound C/S",
+        "Pus":         "Pus C/S",
+        "Stool":       "Stool C/S",
+        "CSF":         "CSF C/S",
+    }
+    specimen_short = SPECIMEN_SHORT.get(specimen, f"{specimen} C/S" if specimen else "")
+
     def hdr_html(page_lbl: str) -> str:
         mdr_pills = ""
+        # MDR/XDR/PDR — deterministic category count (Magiorakos 2012), always shown
         if mdr_class: mdr_pills += pill(mdr_class, "background:#922b21;color:#fff")+" "
-        for ph in ph_labels[:3]: mdr_pills += pill(ph, "background:#6e2fa0;color:#fff")+" "
-        if esbl_prob == "carbapenemase": mdr_pills += pill("CARBAPENEMASE","background:#922b21;color:#fff")
-        elif esbl_prob == "ampc":        mdr_pills += pill("AmpC","background:#b7770d;color:#fff")
-        elif esbl_prob in ("high","moderate"): mdr_pills += pill("ESBL+","background:#b7770d;color:#fff")
+        # Resistance phenotypes (MRSA/VRE/CRE/CRAB/CRPA) — confirmed via direct AST
+        # markers, always shown. Weak/fallback inferences already excluded upstream.
+        for ph in _hdr_ph_labels[:3]: mdr_pills += pill(ph, "background:#6e2fa0;color:#fff")+" "
+        # ESBL/AmpC/Carbapenemase — genuinely PREDICTED mechanisms (predict_esbl()).
+        # Only surface in header when confidence is high; lower-confidence calls
+        # remain available in the body detail, not as a prominent badge.
+        if esbl_conf >= 70:
+            if esbl_prob == "carbapenemase": mdr_pills += pill("CARBAPENEMASE","background:#922b21;color:#fff")
+            elif esbl_prob == "ampc":        mdr_pills += pill("AmpC","background:#b7770d;color:#fff")
+            elif esbl_prob in ("high","moderate"): mdr_pills += pill("ESBL+","background:#b7770d;color:#fff")
         _pills_html = ("<div class='hdr-pills'>" + mdr_pills + "</div>") if mdr_pills else ""
         return f"""<div class="hdr">
   <div>
@@ -3574,8 +3811,10 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:0.6mm 0; }
     {_pills_html}
   </div>
   <div class="hdr-right">
-    <b style="font-size:10pt">{page_lbl}</b><br>
+    <b style="font-size:11pt">{_esc(specimen_short)}</b><br>
+    <span style="font-size:8pt;color:#666">{page_lbl}</span><br>
     {_esc(date_in or now_str[:10])}<br>
+
     <i>{_esc(organism)}</i> — {_esc(patient_name or "—")}
   </div>
 </div><div class="accent"></div><div class="content">"""
@@ -5507,16 +5746,65 @@ if uploaded:
 
         # ── AST Quality Control Checker ───────────────────────────────────
         if sir_map:
-            qc_issues = run_ast_qc(organism_type, sir_map)
-            if qc_issues:
-                with st.expander(f"🔬 AST Quality Control -- {len(qc_issues)} Issue(s)", expanded=True):
-                    st.caption("تحقق تلقائي من منطقية نتائج المزرعة وفق EUCAST Expert Rules")
+            qc_issues    = run_ast_qc(organism_type, sir_map)
+            qa_confidence = compute_qa_confidence(qc_issues, sir_map, organism_type)
+
+            with st.expander(
+                f"{qa_confidence['icon']} AST Quality Control -- "
+                f"{qa_confidence['level']} ({qa_confidence['score']}/100)"
+                + (f" -- {len(qc_issues)} Issue(s)" if qc_issues else ""),
+                expanded=bool(qc_issues)
+            ):
+                st.caption("تحقق تلقائي من منطقية نتائج المزرعة وفق EUCAST Expert Rules")
+
+                # Confidence score box
+                st.markdown(
+                    f"<div style='padding:2mm 3mm;border-radius:2mm;"
+                    f"background:{qa_confidence['color']}15;"
+                    f"border:1px solid {qa_confidence['color']};margin-bottom:4px'>"
+                    f"<b style='color:{qa_confidence['color']}'>"
+                    f"{qa_confidence['icon']} {qa_confidence['level']} — {qa_confidence['score']}/100</b>"
+                    f"<ul style='margin:4px 0 0 16px;padding:0;font-size:0.85em'>"
+                    + "".join(f"<li>{r}</li>" for r in qa_confidence["reasons"])
+                    + "</ul></div>",
+                    unsafe_allow_html=True,
+                )
+
+                if qc_issues:
                     for issue in qc_issues:
                         icon = "❌" if issue["severity"] == "error" else "⚠️"
                         if issue["severity"] == "error":
                             st.error(f"{icon} **[{issue['id']}]** {issue['message']}  \n✏️ {issue['fix']}")
                         else:
                             st.warning(f"{icon} **[{issue['id']}]** {issue['message']}  \n✏️ {issue['fix']}")
+                else:
+                    st.success("✅ All AST consistency checks passed. No issues detected.")
+
+                # QA Report PDF — for microbiologist internal archive only
+                st.divider()
+                st.caption("📄 تقرير الجودة الداخلي (للميكروبيولوجي فقط — لا يُرسل للطبيب)")
+                if WEASYPRINT_AVAILABLE:
+                    _qa_pdf = generate_qa_report_pdf(
+                        organism=organism_type,
+                        specimen=culture_type,
+                        sir_map=sir_map,
+                        qc_issues=qc_issues,
+                        confidence=qa_confidence,
+                        microbiologist=st.session_state.get("microbiologist", ""),
+                        patient_ref=st.session_state.get("patient_name", "") or "",
+                    )
+                    if _qa_pdf:
+                        st.download_button(
+                            "⬇️ Download AST-QA Report (PDF)",
+                            data=_qa_pdf,
+                            file_name=f"AST-QA-Report-{datetime.now().strftime('%Y%m%d-%H%M')}.pdf",
+                            mime="application/pdf",
+                            key="qa_report_pdf_dl",
+                        )
+                    else:
+                        st.caption("⚠️ تعذر إنشاء PDF لتقرير الجودة.")
+                else:
+                    st.caption("⚠️ WeasyPrint غير متاح في هذه البيئة.")
 
         # ── Smart Antibiotic Ranking ──────────────────────────────────────
         if allowed:
