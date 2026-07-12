@@ -1,26 +1,22 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  Orange Lab — Microbiology CDSS  ·  Streamlit base theme
+#  Orange Lab — Microbiology CDSS  ·  "Cyber-Bio" base theme (DARK)
 #
-#  These colours mirror the design tokens at the top of `orange_theme.py`.
-#  This file gives Streamlit its base palette + font; the full Modernist skin
-#  (borders, sidebar, chips, tabs, metrics…) is applied at runtime by
-#  `orange_theme.inject_theme()`.
+#  Colours mirror the design tokens at the top of orange_theme.py. This file
+#  gives Streamlit its dark base palette + font so native widgets (dataframe,
+#  dropdown menus) render dark too; the full skin is applied by
+#  orange_theme.inject_theme().
 #
-#  ⤷ If you change ORANGE in orange_theme.py, update `primaryColor` below so the
-#    two stay in sync.
-#
+#  If you change CYAN/BG in orange_theme.py, update the values below to match.
 #  Place this file at:  <repo-root>/.streamlit/config.toml
 # ═══════════════════════════════════════════════════════════════════════════
 
 [theme]
-base                     = "light"
-primaryColor             = "#E8590C"    # ORANGE   — accent / primary (buttons, focus, active nav)
-backgroundColor          = "#F3F2F2"    # GROUND   — main app background
-secondaryBackgroundColor = "#FFFFFF"    # SURFACE  — cards, inputs, metrics (sidebar is re-inked by the CSS)
-textColor                = "#201E1D"    # INK      — body text
-font                     = "sans serif" # Archivo is loaded + enforced by orange_theme.py
+base                     = "dark"
+primaryColor             = "#00E5A0"
+backgroundColor          = "#0A1424"
+secondaryBackgroundColor = "#0F2138"
+textColor                = "#E7EEF8"
+font                     = "sans serif"
 
 [browser]
-# Cosmetic/privacy only — safe on Streamlit Community Cloud.
-
 gatherUsageStats = false
