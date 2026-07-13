@@ -1,11 +1,8 @@
-# Orange Lab — Microbiology CDSS · light base theme (fast/minimal)
+# Orange Lab — Microbiology CDSS
+# Minimal, default-light look (no custom theme). Fast & smooth.
+# You can also simply DELETE this file to use Streamlit's plain defaults.
 [theme]
-base                     = "light"
-primaryColor             = "#E8590C"
-backgroundColor          = "#F6F7F9"
-secondaryBackgroundColor = "#FFFFFF"
-textColor                = "#1F2733"
-font                     = "sans serif"
+base = "light"
 
 [browser]
 gatherUsageStats = false
