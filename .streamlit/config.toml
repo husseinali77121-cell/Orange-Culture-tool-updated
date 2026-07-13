@@ -1,21 +1,10 @@
-# ═══════════════════════════════════════════════════════════════════════════
-#  Orange Lab — Microbiology CDSS  ·  "Cyber-Bio" base theme (DARK)
-#
-#  Colours mirror the design tokens at the top of orange_theme.py. This file
-#  gives Streamlit its dark base palette + font so native widgets (dataframe,
-#  dropdown menus) render dark too; the full skin is applied by
-#  orange_theme.inject_theme().
-#
-#  If you change CYAN/BG in orange_theme.py, update the values below to match.
-#  Place this file at:  <repo-root>/.streamlit/config.toml
-# ═══════════════════════════════════════════════════════════════════════════
-
+# Orange Lab — Microbiology CDSS · light base theme (fast/minimal)
 [theme]
-base                     = "dark"
-primaryColor             = "#00E5A0"
-backgroundColor          = "#0A1424"
-secondaryBackgroundColor = "#0F2138"
-textColor                = "#E7EEF8"
+base                     = "light"
+primaryColor             = "#E8590C"
+backgroundColor          = "#F6F7F9"
+secondaryBackgroundColor = "#FFFFFF"
+textColor                = "#1F2733"
 font                     = "sans serif"
 
 [browser]
