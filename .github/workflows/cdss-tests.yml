@@ -1,0 +1,44 @@
+# ============================================================================
+# Orange Lab CDSS — automated tests on every push / pull request.
+#
+# WHERE TO PUT THIS FILE:
+#   .github/workflows/cdss-tests.yml   (inside your repo, keep the folder path)
+#
+# WHAT IT DOES:
+#   On every push, GitHub spins up a clean machine, checks out your repo, and
+#   runs BOTH test suites. Green check = safe. Red X = a regression was caught
+#   BEFORE it reached Streamlit Cloud. You do nothing but commit from your phone.
+#
+# IF YOUR .py FILES ARE IN A SUBFOLDER (not the repo root), set `working-directory`
+# on each "run" step to that folder, e.g.  working-directory: ./app
+# ============================================================================
+name: CDSS Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:        # lets you also run it manually from the Actions tab
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # No pip install: the engine imports only the standard library + your
+      # own modules. (If you later add a real dependency, add a step:
+      #   - run: pip install -r requirements.txt )
+
+      - name: "Guard 1 — drift & invariants (fast, < 1s)"
+        run: python test_intrinsic_invariant.py
+
+      - name: "Guard 2 — comprehensive behaviour across all cultures"
+        run: python test_comprehensive.py
+        env:
+          N_FUZZ: "20000"   # heavier fuzzing in CI; bump anytime
