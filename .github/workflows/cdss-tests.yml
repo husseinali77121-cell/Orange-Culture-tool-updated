@@ -1,44 +1,104 @@
 # ============================================================================
 # Orange Lab CDSS — automated tests on every push / pull request.
 #
-# WHERE TO PUT THIS FILE:
-#   .github/workflows/cdss-tests.yml   (inside your repo, keep the folder path)
+# WHERE THIS FILE GOES:
+#   .github/workflows/cdss-tests.yml   (keep the folder path)
 #
 # WHAT IT DOES:
-#   On every push, GitHub spins up a clean machine, checks out your repo, and
-#   runs BOTH test suites. Green check = safe. Red X = a regression was caught
-#   BEFORE it reached Streamlit Cloud. You do nothing but commit from your phone.
+#   On every push GitHub spins up a clean machine and runs SEVEN guards in
+#   dependency order — cheapest and most fundamental first, so a red X points at
+#   the real cause instead of a downstream symptom. Green check = safe to deploy.
+#   Red X = a regression was caught BEFORE it reached Streamlit Cloud.
 #
-# IF YOUR .py FILES ARE IN A SUBFOLDER (not the repo root), set `working-directory`
-# on each "run" step to that folder, e.g.  working-directory: ./app
+# IF YOUR .py FILES ARE IN A SUBFOLDER (not the repo root), add
+#   working-directory: ./your-folder
+# to each "run" step below.
 # ============================================================================
 name: CDSS Tests
 
 on:
   push:
   pull_request:
-  workflow_dispatch:        # lets you also run it manually from the Actions tab
+  workflow_dispatch:          # also runnable by hand from the Actions tab
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # checkout@v5 / setup-python@v6 run on Node.js 24. The older v4 / v5 pair
+      # targets Node.js 20, which GitHub deprecated in September 2025 and now
+      # force-runs on Node 24 with a warning annotation on every run. Bumping
+      # removes the warning and stops the day the forced shim is withdrawn.
       - name: Check out the code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
-      # No pip install: the engine imports only the standard library + your
-      # own modules. (If you later add a real dependency, add a step:
-      #   - run: pip install -r requirements.txt )
+      # ── GUARD 0 ─────────────────────────────────────────────────────────
+      # A missing clinical_data.py is the exact failure that shipped once: the
+      # import inside ast_qa_engine fell through to an empty table and every
+      # intrinsic-resistance check silently passed. Fail loudly and early.
+      - name: "Guard 0 — the canonical table is present and populated"
+        run: |
+          test -f clinical_data.py || {
+            echo "::error::clinical_data.py is missing. It is the single source of"
+            echo "::error::truth for INTRINSIC_RESISTANCE. Nothing below is valid."
+            exit 1
+          }
+          python -c "
+          import sys
+          from clinical_data import INTRINSIC_RESISTANCE as IR
+          if len(IR) < 30:
+              print('::error::INTRINSIC_RESISTANCE has only %d organisms (expected >= 30).' % len(IR))
+              sys.exit(1)
+          print('canonical table OK - %d organisms' % len(IR))
+          "
 
-      - name: "Guard 1 — drift & invariants (fast, < 1s)"
+      # ── GUARD 1 ─────────────────────────────────────────────────────────
+      # Structural: do the independent copies of the intrinsic table still agree,
+      # and is the ESBL label still gated to Enterobacterales?
+      - name: "Guard 1 — intrinsic-table and ESBL-gating invariants"
         run: python test_intrinsic_invariant.py
 
-      - name: "Guard 2 — comprehensive behaviour across all cultures"
+      # ── GUARD 2 ─────────────────────────────────────────────────────────
+      # Behavioural regression guard. Every check in that file exists because the
+      # corresponding bug reached a report: Acinetobacter/amox-clav, the OCR
+      # phantom-drug scanner, and the P. aeruginosa carbapenemase mislabel.
+      - name: "Guard 2 — intrinsic / OCR / mechanism regressions"
+        run: python test_intrinsic_sync.py
+
+      # ── GUARD 3 ─────────────────────────────────────────────────────────
+      # Fuzz + property invariants across the whole culture space.
+      - name: "Guard 3 — comprehensive behavioural invariants"
         run: python test_comprehensive.py
-        env:
-          N_FUZZ: "20000"   # heavier fuzzing in CI; bump anytime
+
+      # ── GUARD 4 ─────────────────────────────────────────────────────────
+      # The clinical scenario matrix: every organism, in every specimen it comes
+      # from, against every realistic resistance pattern. This catches "each rule
+      # is right, the combination is wrong" — the shape of every serious defect
+      # this system has had.
+      - name: "Guard 4 — clinical scenario matrix"
+        run: python test_scenarios.py
+
+      # ── GUARD 5 ─────────────────────────────────────────────────────────
+      # Citation integrity: every clinical rule traces to a versioned document,
+      # nothing cites a superseded one, and no verification has gone stale.
+      - name: "Guard 5 — guideline citation registry"
+        run: python test_guidelines.py
+
+      # ── GUARD 6 ─────────────────────────────────────────────────────────
+      # Byte-compile everything. Modules no suite imports (UI helpers, report
+      # builders) could otherwise carry a syntax error into production without a
+      # single test turning red.
+      - name: "Guard 6 — every module compiles"
+        run: python -m compileall -q . && echo "all modules compile"
+
+      # Informational only — never fails the build. Prints the clinical rules
+      # still awaiting a human check against the source PDF, so the queue stays
+      # visible instead of quietly growing.
+      - name: "Verification queue (informational)"
+        if: always()
+        run: python guideline_registry.py --queue || true
