@@ -1203,6 +1203,11 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:0.6mm 0; }
         # ESBL/AmpC/Carbapenemase — genuinely PREDICTED mechanisms (predict_esbl()).
         # Only surface in header when confidence is high; lower-confidence calls
         # remain available in the body detail, not as a prominent badge.
+        if esbl_prob == "cr_pseudomonas":
+            # Deliberately outside the >=70 gate: the whole point of this call is
+            # that it is a MODERATE-confidence finding, and hiding it would leave
+            # the header silent about a carbapenem-resistant isolate.
+            mdr_pills += pill("CARBAPENEM-R P. aeruginosa","background:#b7770d;color:#fff")
         if esbl_conf >= 70:
             if esbl_prob == "carbapenemase": mdr_pills += pill("CARBAPENEMASE","background:#922b21;color:#fff")
             elif esbl_prob == "ampc":        mdr_pills += pill("AmpC","background:#b7770d;color:#fff")
@@ -1561,6 +1566,11 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:0.6mm 0; }
                 if _ep3 == "carbapenemase":
                     H.append(f'<div class="alert al-danger" style="font-size:8.5pt"><b>🚨 {_em3}</b> ({_ec3}%)</div>')
                     H.append(f'<div style="font-size:8pt;color:#922b21">{_ed3[:130]}</div>')
+                elif _ep3 == "cr_pseudomonas":
+                    # Serious, but NOT a carbapenemase claim — amber, and it must
+                    # point the reader back at the beta-lactams still testing S.
+                    H.append(f'<div class="alert al-warn" style="font-size:8.5pt"><b>⚠️ {_em3}</b> ({_ec3}%)</div>')
+                    H.append(f'<div style="font-size:8pt;color:#555">{_ed3[:130]}</div>')
                 elif _ep3 in ("high","ampc"):
                     _l3 = "AmpC β-Lactamase" if _ep3 == "ampc" else "ESBL Producer"
                     H.append(f'<div class="alert al-danger" style="font-size:8.5pt"><b>⚠️ {_l3}</b> ({_ec3}%) — {_em3}</div>')
@@ -2103,7 +2113,13 @@ def generate_decision_tree_image(
 
     # ── ESBL / AmpC / Carbapenemase ────────────────────────────────────────────
     _esbl_mech = (esbl_result or {}).get("mechanism", "")
-    if _esbl_prob == "carbapenemase":
+    if _esbl_prob == "cr_pseudomonas":
+        alerts.append("Carbapenem-R P. aeruginosa")
+        alerts.append("Mechanism undetermined - not a carbapenemase call")
+        _sS = (esbl_result or {}).get("still_susceptible_betalactams") or []
+        if _sS:
+            alerts.append("Still S: " + ", ".join(_sS[:2]))
+    elif _esbl_prob == "carbapenemase":
         if "OXA-48" in _esbl_mech:
             alerts.append("Possible OXA-48 carbapenemase")
         else:
@@ -2402,6 +2418,9 @@ def generate_report(
         prob   = esbl_r.get("probability")
         if prob == "carbapenemase":
             L += [f"\n🚨 {esbl_r.get('mechanism','POSSIBLE CARBAPENEMASE PRODUCER').upper()}", sep2,
+                  esbl_r["detail"], f"Action: {esbl_r['action']}", ""]
+        elif prob == "cr_pseudomonas":
+            L += [f"\n⚠️  {esbl_r.get('mechanism','CARBAPENEM-RESISTANT P. AERUGINOSA').upper()}", sep2,
                   esbl_r["detail"], f"Action: {esbl_r['action']}", ""]
         elif prob == "ampc":
             L += ["\n⚠️  POSSIBLE AmpC β-LACTAMASE PRODUCER", sep2,

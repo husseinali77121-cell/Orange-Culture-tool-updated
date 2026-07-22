@@ -16,7 +16,19 @@ and no Streamlit/runtime environment.
 import ast, sys, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-COMMERCIAL = os.path.join(HERE, "streamlit_app.py")   # inline copy (single-file deploy)
+# REPO-AGNOSTIC. This suite is shared by two repos that do NOT hold the same
+# files: the commercial single-file build ships streamlit_app.py, the Orange Lab
+# modular build does not. Hard-coding the commercial path made this test die with
+# FileNotFoundError on the modular repo before a single invariant ran. Absent
+# files are SKIPPED and reported; a file that exists is always checked.
+def _first_existing(*names):
+    for n in names:
+        p = os.path.join(HERE, n)
+        if os.path.exists(p):
+            return p
+    return None
+
+COMMERCIAL = _first_existing("streamlit_app.py")      # inline copy (single-file deploy)
 CLINICAL   = os.path.join(HERE, "clinical_data.py")   # source of truth (modular stack)
 QA_ENGINE  = os.path.join(HERE, "ast_qa_engine.py")   # embedded standalone fallback
 
@@ -61,8 +73,12 @@ def check(label, ok, detail=""):
 print("Orange Lab — intrinsic-resistance / ESBL-gating invariants\n")
 
 # ── INVARIANT 1: the two independent copies are byte-equivalent ──────────────
-ir_comm = _literal(COMMERCIAL, "INTRINSIC_RESISTANCE")
 ir_clin = _literal(CLINICAL,  "INTRINSIC_RESISTANCE")
+ir_comm = _literal(COMMERCIAL, "INTRINSIC_RESISTANCE") if COMMERCIAL else None
+if ir_comm is None:
+    print("  [SKIP] commercial INTRINSIC_RESISTANCE == clinical_data "
+          "— streamlit_app.py not in this repo (modular build)")
+    ir_comm = ir_clin          # neutral value; the two checks below become no-ops
 same = _norm(ir_comm) == _norm(ir_clin)
 diff = ""
 if not same:
@@ -89,10 +105,31 @@ def _qa_fallback(path):
                     ) and isinstance(stmt.value, ast.Dict):
                         return ast.literal_eval(stmt.value)
     return None
+def _qa_import_raises(path):
+    """True if the except branch RAISES instead of degrading to an empty table.
+
+    Two designs are legitimate and this invariant accepts both:
+      * commercial single-file build -> embeds a full copy (checked for drift)
+      * modular build                -> refuses to start without clinical_data
+    What is NEVER acceptable is the third option that actually shipped:
+    `_CANONICAL_INTRINSIC = {}`, which silently disables every intrinsic check.
+    """
+    tree = ast.parse(open(path, encoding="utf-8").read())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Try):
+            for h in node.handlers:
+                if any(isinstance(st, ast.Raise) for st in ast.walk(h)):
+                    return True
+    return False
+
 qa_fb = _qa_fallback(QA_ENGINE)
-check("ast_qa_engine embedded fallback == clinical_data (standalone safety)",
-      qa_fb is not None and _norm(qa_fb) == _norm(ir_clin),
-      "QA fallback missing or drifted")
+if qa_fb is None and _qa_import_raises(QA_ENGINE):
+    check("ast_qa_engine refuses to start without clinical_data (no silent-empty table)",
+          True)
+else:
+    check("ast_qa_engine embedded fallback == clinical_data (standalone safety)",
+          qa_fb is not None and _norm(qa_fb) == _norm(ir_clin),
+          "QA fallback missing, drifted, or silently empty")
 
 # ── INVARIANT 2: ESBL_PRODUCERS is Enterobacterales-only (no non-fermenters) ─
 producers = set(_literal(CLINICAL, "ESBL_PRODUCERS"))

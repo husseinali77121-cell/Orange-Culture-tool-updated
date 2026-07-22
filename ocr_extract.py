@@ -547,12 +547,12 @@ def classify_sir_from_line(line: str) -> Optional[str]:
     return None
 
 def match_antibiotic_from_text(snippet: str) -> Optional[str]:
-    snippet_norm = normalize_abx_key(snippet)
-    if not snippet_norm:
-        return None
-    for alias_norm, abx_name in _alias_sorted():
-        if alias_norm and alias_norm in snippet_norm:
-            return abx_name
+    hits = _scan_line_for_drugs(snippet)
+    if hits:
+        # On a row reading "Ampicillin/Sulbactam  S" the COMBINATION -- not the
+        # partner drug hiding inside its name -- is what was tested, so prefer
+        # the longest official name among the span-claimed hits.
+        return max(hits, key=lambda h: len(normalize_abx_key(h[0])))[0]
     best_match = None
     best_score = 0.0
     for abx_name, info in ABX_GUIDELINES.items():
@@ -591,67 +591,87 @@ def match_antibiotics_in_line(snippet: str) -> List[str]:
     return found
 
 
+def _scan_line_for_drugs(line: str) -> List[Tuple[str, int]]:
+    """Every distinct antibiotic named in ONE line, longest-name-wins.
+
+    Returns (official_name, offset_within_normalized_line) so the caller can
+    keep the printed order of the sheet.
+
+    WHY SPAN-CLAIMING. The previous scanner tested `alias in text` with no
+    memory of what it had already matched. Because every combination agent
+    CONTAINS its own partner drug, a single printed line manufactured several
+    phantom panel entries that were never tested:
+
+        "Ampicillin/Sulbactam"          -> also produced "Ampicillin"
+        "Amoxicillin + Clavulanic acid" -> also produced "Amoxicillin"
+        "Cefoperazone + Sulbactam"      -> also produced "Cefoperazone"
+        "Cefuroxime sodium"             -> also produced "Cefuroxime"
+        "Ciprofloxacin"                 -> also produced "Ofloxacin"   (!)
+        "Levofloxacin"                  -> also produced "Ofloxacin"   (!)
+
+    Those phantoms then hit INTRINSIC_RESISTANCE. For A. baumannii, bare
+    Ampicillin / Amoxicillin / amox-clav ARE intrinsically resistant while the
+    tested Ampicillin/Sulbactam is NOT, so the report raised an
+    intrinsic-resistance alert against a drug that was never on the panel, and
+    the "OCR detected N drugs without S/I/R" panel filled with agents the lab
+    never ran.
+
+    The fix scans the NORMALIZED line (same normalisation as the alias index, so
+    "+", "/", spaces and case never matter), longest alias first, and CLAIMS the
+    character span each match occupies. A shorter name falling entirely inside
+    an already-claimed span is a fragment of the longer name, not a second drug.
+    """
+    norm = normalize_abx_key(line)
+    if not norm:
+        return []
+    claimed: List[Tuple[int, int]] = []
+    found:   List[Tuple[str, int]] = []
+    seen:    set = set()
+    for alias_norm, abx_name in _alias_sorted():
+        if not alias_norm or len(alias_norm) < 4:
+            continue
+        start = 0
+        while True:
+            i = norm.find(alias_norm, start)
+            if i < 0:
+                break
+            j = i + len(alias_norm)
+            # Skip a hit that lies entirely inside a longer name already matched.
+            if not any(a <= i and j <= b for a, b in claimed):
+                claimed.append((i, j))
+                if abx_name not in seen:
+                    seen.add(abx_name)
+                    found.append((abx_name, i))
+            start = i + 1
+    return found
+
+
 def extract_detected_drugs(full_text: str) -> List[str]:
     """
-    Scans OCR text for ANY antibiotic name — regardless of S/I/R presence.
-    Uses multiple strategies: per-line, per-word, substring matching.
+    Every antibiotic named anywhere in the OCR text — with or without S/I/R.
 
     الترتيب = ترتيب ظهور المضاد في الورقة، مش أبجدي.
     الإصدار القديم كان بيجمّع الأسماء في set() ويرجّع sorted(detected)، فالقائمة
     كانت بتطلع مرتبة أبجدياً ومش مطابقة لورقة الـ AST المطبوعة. ولمّا OCR بيفشل
     في قراءة S/I/R لكذا مضاد (حالة شائعة) الأدوية دي بتظهر أبجدي وبتتضاف لآخر
     القائمة الموحّدة بنفس الترتيب الأبجدي — فالشاشة مش بتماشي الورقة والمستخدم
-    يقدر يحطّ النتيجة على المضاد الغلط. بنسجّل هنا أول موضع ظهور لكل مضاد في
-    نص الـ OCR ونرتّب بيه.
+    يقدر يحطّ النتيجة على المضاد الغلط. بنسجّل هنا أول موضع ظهور لكل مضاد
+    ونرتّب بيه.
+
+    المسح بيتم **سطر-بسطر** (ورقة الـ AST بتطبع مضاد في كل صف) عشان اسم الدواء
+    ما يتجمّعش عبر نهاية السطر، وكل سطر بيستخدم matcher بيحجز الـ span بتاع
+    الاسم الأطول — فالمضادات المركّبة ما بتولّدش أدوية وهمية من مكوّناتها.
     """
-    text_lower = full_text.lower()
     first_pos: Dict[str, int] = {}
-
-    def _note(abx_name: Optional[str], pos: int) -> None:
-        if abx_name and pos < first_pos.get(abx_name, 1 << 30):
-            first_pos[abx_name] = pos
-
-    # Strategy 1: per-line match — الموضع = بداية السطر داخل النص الكامل
     _offset = 0
-    for raw_line in full_text.splitlines(keepends=True):
+    for raw_line in (full_text or "").splitlines(keepends=True):
         line = raw_line.strip()
         if len(line) >= 3:
-            _note(match_antibiotic_from_text(line), _offset)
+            for abx_name, within in _scan_line_for_drugs(line):
+                pos = _offset + within
+                if pos < first_pos.get(abx_name, 1 << 30):
+                    first_pos[abx_name] = pos
         _offset += len(raw_line)
-
-    # Strategy 2: direct alias scan.
-    # ABX_ALIAS_INDEX keys are NORMALIZED (normalize_abx_key), but the old code
-    # searched for them inside the RAW lowercase text. Any alias whose normal
-    # form differs from its printed form — i.e. anything containing a space, a
-    # hyphen or a slash: "amoxicillin-clavulanate",
-    # "trimethoprim/sulfamethoxazole", "piperacillin-tazobactam" — could never
-    # match, so this whole strategy was dead for exactly the drugs OCR is most
-    # likely to mangle. We scan a normalized copy and map the hit back to its
-    # offset in the raw text (raw scan kept too; a union can only help).
-    norm_text, norm_pos = _norm_index(full_text)
-    for alias_norm, abx_name in _alias_sorted():
-        if len(alias_norm) >= 4:
-            _p = norm_text.find(alias_norm)
-            if _p >= 0:
-                _note(abx_name, norm_pos[_p])
-            _p_raw = text_lower.find(alias_norm)
-            if _p_raw >= 0:
-                _note(abx_name, _p_raw)
-
-    # Strategy 3: check ABX_GUIDELINES keys and their own alias lists.
-    for abx_name, _info in ABX_GUIDELINES.items():
-        for variant in [abx_name, *(_info.get("aliases", []) or [])]:
-            if len(variant) < 4:
-                continue
-            _p = text_lower.find(variant.lower())
-            if _p >= 0:
-                _note(abx_name, _p)
-                continue
-            _vn = re.sub(r"[^a-z0-9]", "", variant.lower())
-            if len(_vn) >= 4:
-                _p2 = norm_text.find(_vn)
-                if _p2 >= 0:
-                    _note(abx_name, norm_pos[_p2])
 
     # ترتيب الورقة. الاسم مجرد كسر تعادل لضمان نتيجة ثابتة لو اتساوى الموضع.
     return [name for name, _ in sorted(first_pos.items(),

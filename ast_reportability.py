@@ -93,7 +93,31 @@ INTRINSIC_RULES: List[Dict[str, Any]] = [
                       "(macrolides, lincosamides, glycopeptides, oxazolidinones, "
                       "daptomycin, fusidic acid, rifampicin) — the outer membrane "
                       "excludes them."),
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 2 · CLSI M100 App. B",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 2 · CLSI M100 App. B",
+    },
+    {
+        # Salmonella and Shigella test susceptible in vitro to oral 1st/2nd-gen
+        # cephalosporins and to aminoglycosides, but these agents FAIL in vivo:
+        # they do not reach the intracellular compartment where the organism
+        # lives. Reporting them susceptible is the classic enteric-fever
+        # reporting error, and it is the kind of error that gets a patient
+        # treated with a drug that cannot work.
+        "id": "intr_salmonella_shigella_invivo",
+        "organisms": ["salmonella", "shigella"],
+        "drugs": ["cephalexin", "cefadroxil", "cephradine", "cefaclor",
+                  "cefazolin", "cefuroxime", "cephalothin",
+                  "gentamicin", "tobramycin", "amikacin", "kanamycin"],
+        "exclude": [],
+        "reason_ar": ("Salmonella / Shigella: هذه المضادات تظهر حسّاسة معملياً "
+                      "لكنها تفشل داخل الجسم (لا تصل للتجويف داخل الخلوي حيث "
+                      "توجد الجرثومة). لا تُبلَّغ كحسّاسة — الخيارات المعتمدة: "
+                      "fluoroquinolone أو ceftriaxone أو azithromycin."),
+        "reason_en": ("Salmonella / Shigella: these agents test susceptible in "
+                      "vitro but fail in vivo (they do not reach the "
+                      "intracellular compartment). Do not report as susceptible "
+                      "— the established options are a fluoroquinolone, "
+                      "ceftriaxone, or azithromycin."),
+        "reference": "CLSI M100 Ed36, Table 2A comment · EUCAST Expected Resistant Phenotypes v1.2 (2023)",
     },
     {
         "id": "intr_klebsiella_ampicillin",
@@ -108,7 +132,7 @@ INTRINSIC_RULES: List[Dict[str, Any]] = [
         "reason_en": ("Klebsiella spp. carry chromosomal SHV-1 — intrinsic "
                       "aminopenicillin resistance. (Inhibitor combinations are not "
                       "intrinsically resistant.)"),
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 2",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 2",
     },
     {
         "id": "intr_proteus_mirabilis",
@@ -119,13 +143,20 @@ INTRINSIC_RULES: List[Dict[str, Any]] = [
         "reason_ar": "Proteus mirabilis مقاوم جوهرياً للتتراسيكلينات · colistin · nitrofurantoin.",
         "reason_en": ("Proteus mirabilis is intrinsically resistant to tetracyclines, "
                       "colistin and nitrofurantoin."),
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 2",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 2",
     },
     {
         "id": "intr_morganella_providencia_proteus_vulgaris",
         "organisms": ["morganella", "providencia", "proteus vulgaris",
                       "proteus penneri"],
-        "drugs": ["ampicillin", "cefuroxime", "cefazolin", "cephalothin",
+        # "amoxicillin" and the oral 1st-gen cephalosporins were absent, so
+        # amox-clav / cephalexin / cefadroxil / cefaclor / cefoxitin escaped this
+        # rule while clinical_data.INTRINSIC_RESISTANCE banned them. Sulbactam is
+        # NOT excluded: chromosomal AmpC is not inhibited by it, so
+        # ampicillin-sulbactam stays intrinsically resistant for this tribe.
+        "drugs": ["ampicillin", "amoxicillin", "cephalexin", "cefadroxil",
+                  "cephradine", "cefaclor", "cefuroxime", "cefazolin",
+                  "cephalothin", "cefoxitin",
                   "tetracycline", "doxycycline", "minocycline", "tigecycline",
                   "colistin", "polymyxin", "nitrofurantoin"],
         "exclude": ["tazobactam", "avibactam"],
@@ -135,14 +166,21 @@ INTRINSIC_RULES: List[Dict[str, Any]] = [
         "reason_en": ("Intrinsic (chromosomal AmpC plus species traits) — "
                       "aminopenicillins, 1st/2nd-gen cephalosporins, tetracyclines, "
                       "colistin, nitrofurantoin."),
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 2",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 2",
     },
     {
         "id": "intr_serratia",
         "organisms": ["serratia"],
         "drugs": ["ampicillin", "amoxicillin", "cefazolin", "cephalothin",
                   "cefuroxime", "cefoxitin", "colistin", "polymyxin",
-                  "nitrofurantoin"],
+                  "nitrofurantoin",
+                  "cephalexin",
+                  "cefadroxil",
+                  "cephradine",
+                  "cefaclor",
+                  "tetracycline",
+                  "doxycycline"
+                  ],
         "exclude": ["tazobactam", "avibactam"],
         "reason_ar": ("Serratia marcescens: AmpC كروموسومي — مقاومة جوهرية "
                       "للأمينوبنسلينات وسيفالوسبورين ١/٢ والسيفاميسين، "
@@ -150,20 +188,31 @@ INTRINSIC_RULES: List[Dict[str, Any]] = [
         "reason_en": ("Serratia marcescens: chromosomal AmpC — intrinsic to "
                       "aminopenicillins, 1st/2nd-gen cephalosporins, cephamycins, "
                       "colistin and nitrofurantoin."),
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 2",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 2",
     },
     {
         "id": "intr_enterobacter_citrobacter_ampc",
         "organisms": ["enterobacter", "klebsiella aerogenes", "citrobacter freundii",
                       "hafnia"],
         "drugs": ["ampicillin", "amoxicillin", "cefazolin", "cephalothin",
-                  "cefoxitin"],
-        "exclude": ["tazobactam", "avibactam", "sulbactam"],
+                  "cefoxitin",
+                  "cephalexin",
+                  "cefadroxil",
+                  "cephradine",
+                  "cefaclor",
+                  "cefuroxime",
+                  "sulbactam"
+                  ],
+        # Sulbactam does NOT inhibit chromosomal AmpC -- IDSA states that basal
+        # AmpC production confers resistance to ampicillin, amoxicillin-
+        # clavulanate AND ampicillin-sulbactam. Excluding "sulbactam" here
+        # exempted amp-sulbactam from a rule that does apply to it.
+        "exclude": ["tazobactam", "avibactam"],
         "reason_ar": ("AmpC كروموسومي مُحدَث — مقاومة جوهرية للأمينوبنسلينات "
                       "وسيفالوسبورين الجيل الأول والسيفاميسين."),
         "reason_en": ("Inducible chromosomal AmpC — intrinsic to aminopenicillins, "
                       "1st-gen cephalosporins and cephamycins."),
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 2",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 2",
     },
     {
         "id": "intr_pseudomonas",
@@ -171,7 +220,19 @@ INTRINSIC_RULES: List[Dict[str, Any]] = [
         "drugs": ["ampicillin", "amoxicillin", "cefazolin", "cephalothin",
                   "cefuroxime", "cefoxitin", "cefotaxime", "ceftriaxone",
                   "ertapenem", "tetracycline", "doxycycline", "tigecycline",
-                  "trimethoprim", "chloramphenicol", "kanamycin", "nitrofurantoin"],
+                  "trimethoprim", "chloramphenicol", "kanamycin", "nitrofurantoin",
+                  "cephalexin",
+                  "cefadroxil",
+                  "cephradine",
+                  "cefaclor",
+                  "cefixime",
+                  "cefpodoxime",
+                  "ceftibuten",
+                  "erythromycin",
+                  "clarithromycin",
+                  "azithromycin",
+                  "minocycline"
+                  ],
         "exclude": ["tazobactam", "avibactam"],
         "reason_ar": ("P. aeruginosa مقاوم جوهرياً — لا تُبلَّغ هذه المضادات "
                       "حتى لو ظهرت حسّاسة. (Ceftazidime و Cefepime فقط من "
@@ -179,27 +240,65 @@ INTRINSIC_RULES: List[Dict[str, Any]] = [
         "reason_en": ("P. aeruginosa is intrinsically resistant — do not report these "
                       "even if they test susceptible. (Only ceftazidime and cefepime "
                       "among the cephalosporins are active.)"),
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 3",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 3",
     },
     {
         "id": "intr_acinetobacter",
         "organisms": ["acinetobacter"],
         "drugs": ["ampicillin", "amoxicillin", "aztreonam", "ertapenem",
-                  "trimethoprim", "fosfomycin", "chloramphenicol"],
-        "exclude": ["sulbactam", "clav", "sulfamethoxazole", "sulphamethoxazol"],
-        "reason_ar": ("Acinetobacter مقاوم جوهرياً. (ملاحظة: Ampicillin/Sulbactam "
-                      "استثناء — الـ sulbactam نفسه فعّال ضد Acinetobacter.)"),
-        "reason_en": ("Acinetobacter is intrinsically resistant. (Note: "
-                      "ampicillin-sulbactam is an exception — sulbactam itself has "
-                      "intrinsic activity against Acinetobacter.)"),
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 3",
+                  "trimethoprim", "fosfomycin", "chloramphenicol",
+                  "cephalexin",
+                  "cefadroxil",
+                  "cephradine",
+                  "cefaclor",
+                  "cefazolin",
+                  "cefuroxime",
+                  "cefoxitin",
+                  "cefotaxime",
+                  "ceftriaxone",
+                  "nitrofurantoin"
+                  ],
+        # BUG FIXED: "clav" used to sit in this exclude list, which exempted
+        # amoxicillin-clavulanate from the rule. That is backwards. Clavulanate
+        # has NO useful activity against Acinetobacter, so amox-clav IS
+        # intrinsically resistant and EUCAST lists it explicitly. Sulbactam is
+        # the exception -- it has intrinsic anti-Acinetobacter activity of its
+        # own -- so only "sulbactam" belongs here. Leaving "clav" in made this
+        # module contradict clinical_data.INTRINSIC_RESISTANCE, which correctly
+        # bans amox-clav: the recommendation panel refused the drug while the QC
+        # panel stayed silent about a Susceptible result for it.
+        "exclude": ["sulbactam", "sulfamethoxazole", "sulphamethoxazol"],
+        "reason_ar": ("Acinetobacter مقاوم جوهرياً — بما في ذلك "
+                      "Amoxicillin/Clavulanate (الـ clavulanate بلا فاعلية هنا). "
+                      "(ملاحظة: Ampicillin/Sulbactam استثناء — الـ sulbactam نفسه "
+                      "فعّال ضد Acinetobacter.)"),
+        "reason_en": ("Acinetobacter is intrinsically resistant — "
+                      "amoxicillin-clavulanate included (clavulanate adds nothing "
+                      "here). (Note: ampicillin-sulbactam is an exception — "
+                      "sulbactam itself has intrinsic activity against ",
+                      "Acinetobacter.)"),
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 3",
     },
     {
         "id": "intr_stenotrophomonas",
         "organisms": ["stenotrophomonas"],
         "drugs": ["imipenem", "meropenem", "ertapenem", "gentamicin", "amikacin",
                   "tobramycin", "ampicillin", "amoxicillin", "cefotaxime",
-                  "ceftriaxone", "aztreonam", "piperacillin"],
+                  "ceftriaxone", "aztreonam", "piperacillin",
+                  "cephalexin",
+                  "cefadroxil",
+                  "cephradine",
+                  "cefaclor",
+                  "cefazolin",
+                  "cefuroxime",
+                  "ceftazidime",
+                  "cefepime",
+                  "ciprofloxacin",
+                  "norfloxacin",
+                  "ofloxacin",
+                  "fosfomycin",
+                  "nitrofurantoin"
+                  ],
         "exclude": [],
         "reason_ar": ("S. maltophilia مقاوم جوهرياً لمعظم البيتا-لاكتام "
                       "(بما فيها الكاربابينيمات — L1 metallo-β-lactamase) "
@@ -208,34 +307,62 @@ INTRINSIC_RULES: List[Dict[str, Any]] = [
                       "(carbapenems included — L1 metallo-beta-lactamase) and to "
                       "aminoglycosides. The established option is "
                       "trimethoprim-sulfamethoxazole."),
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 3",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 3",
     },
     {
-        "id": "intr_staph_gram_neg_agents",
-        "organisms": ["staphylococcus", "staph"],
+        "id": "intr_gram_pos_gram_neg_agents",
+        "organisms": ["staphylococcus", "staph", "streptococc", "pneumoniae",
+                      "enterococc", "vre", "listeria", "corynebacterium"],
         "drugs": ["aztreonam", "colistin", "polymyxin", "nalidixic acid",
-                  "temocillin"],
+                  "temocillin", "fusidic acid"],
         "exclude": [],
-        "reason_ar": "المكوّرات العنقودية مقاومة جوهرياً لمضادات سالبة الجرام هذه.",
-        "reason_en": "Staphylococci are intrinsically resistant to these Gram-negative agents.",
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 4",
+        "reason_ar": "إيجابيات الجرام مقاومة جوهرياً لمضادات سالبة الجرام هذه (aztreonam · colistin/polymyxin · nalidixic acid · temocillin).",
+        "reason_en": "Gram-positive bacteria are expected resistant to these Gram-negative agents (aztreonam, colistin/polymyxin, nalidixic acid, temocillin).",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 4",
+    },
+    {
+        # A result of "Vancomycin S" on an isolate reported as VRE is not an
+        # expected-phenotype question -- it is a direct contradiction between
+        # the identification and the susceptibility result. Exactly the case
+        # EUCAST means by "a result which contradicts the expected phenotype
+        # should be viewed with suspicion": either the ID or the AST is wrong,
+        # and the isolate should be re-checked before the report leaves the lab.
+        "id": "intr_vre_glycopeptide_contradiction",
+        "organisms": ["vre"],
+        "drugs": ["vancomycin", "teicoplanin"],
+        "exclude": [],
+        "reason_ar": ("تناقض: العزلة مُبلَّغة كـ VRE (مقاومة للجلايكوببتيد) "
+                      "بينما النتيجة تقول حسّاسة. راجع التعريف والنتيجة معاً "
+                      "قبل إصدار التقرير — أحدهما خطأ."),
+        "reason_en": ("Contradiction: the isolate is reported as VRE "
+                      "(glycopeptide-resistant) while the result reads "
+                      "susceptible. Re-check the identification and the AST "
+                      "together before releasing — one of them is wrong."),
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023) · CLSI M100 Ed36",
     },
     {
         "id": "intr_enterococcus_cephalosporins",
-        "organisms": ["enterococc"],
+        "organisms": ["enterococc", "vre"],
         "drugs": ["cephalexin", "cefazolin", "cefuroxime", "cefoxitin",
                   "cefotaxime", "ceftriaxone", "ceftazidime", "cefepime",
-                  "cefoperazone", "clindamycin", "fusidic acid", "aztreonam"],
+                  "cefoperazone", "clindamycin", "fusidic acid", "aztreonam",
+                  "cefadroxil",
+                  "cephradine",
+                  "cefaclor",
+                  "cefixime",
+                  "cefpodoxime",
+                  "ceftibuten"
+                  ],
         "exclude": [],
         "reason_ar": ("الـ Enterococci مقاومة جوهرياً لكل السيفالوسبورينات "
                       "و clindamycin و aztreonam — لا تُبلَّغ أبداً كحسّاسة."),
         "reason_en": ("Enterococci are intrinsically resistant to ALL cephalosporins, "
                       "clindamycin and aztreonam — never report as susceptible."),
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 4 · CLSI M100 App. B",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 4 · CLSI M100 App. B",
     },
     {
         "id": "intr_enterococcus_sxt_invivo",
-        "organisms": ["enterococc"],
+        "organisms": ["enterococc", "vre"],
         "drugs": ["trimethoprim", "sulfamethoxazole", "sulphamethoxazol",
                   "cotrimoxazole", "co-trimoxazole"],
         "exclude": [],
@@ -245,21 +372,55 @@ INTRINSIC_RULES: List[Dict[str, Any]] = [
         "reason_en": ("Enterococci test susceptible to TMP-SMX in vitro but it is "
                       "NOT clinically effective — they take up exogenous folate and "
                       "bypass the blocked pathway. Do not report."),
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 4 · CLSI M100 App. B",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 4 · CLSI M100 App. B",
+    },
+    {
+        # Missing rule found by the cross-table scenario matrix: clinical_data
+        # lists Gentamicin/Tobramycin as intrinsic for streptococci and
+        # enterococci, but ast_reportability had no matching row, so a lab that
+        # reported "Gentamicin S" on a Strep or Enterococcus panel got no QC
+        # flag at all. Low-level aminoglycoside resistance is a species trait
+        # (poor uptake across the cell wall); the drug is only ever used in
+        # SYNERGY with a cell-wall agent, and only when HLAR screening is
+        # negative. A bare "S" is therefore uninterpretable and must not stand.
+        "id": "intr_strep_entero_aminoglycoside_mono",
+        "organisms": ["streptococc", "enterococc", "vre"],
+        "drugs": ["gentamicin", "tobramycin", "amikacin", "netilmicin",
+                  "kanamycin", "streptomycin"],
+        "exclude": [],
+        "reason_ar": ("المكوّرات السبحية والمعوية مقاومة جوهرياً للأمينوجلايكوزيدات "
+                      "كعلاج مفرد (ضعف النفاذ عبر جدار الخلية). تُستخدم فقط "
+                      "بالتآزر مع مضاد يعمل على جدار الخلية (بنسلين/أمبيسيللين/"
+                      "vancomycin) وبعد فحص HLAR. نتيجة S منفردة غير قابلة للتفسير "
+                      "ولا تُبلَّغ — بلّغ فحص HLAR (Gentamicin 120µg / "
+                      "Streptomycin 300µg) بدلاً منها."),
+        "reason_en": ("Streptococci and enterococci are intrinsically resistant to "
+                      "aminoglycoside MONOTHERAPY (poor cell-wall uptake). These "
+                      "agents are used only in synergy with a cell-wall-active drug ",
+                      "(penicillin/ampicillin/vancomycin) and only when HLAR "
+                      "screening is negative. A standalone S is uninterpretable and "
+                      "must not be reported — report the HLAR screen "
+                      "(gentamicin 120µg / streptomycin 300µg) instead."),
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Tables 4-5 · CLSI M100 Ed36",
     },
     {
         "id": "intr_listeria_cephalosporins",
         "organisms": ["listeria"],
         "drugs": ["cephalexin", "cefazolin", "cefuroxime", "cefoxitin",
                   "cefotaxime", "ceftriaxone", "ceftazidime", "cefepime",
-                  "cefoperazone", "fosfomycin"],
+                  "cefoperazone", "fosfomycin",
+                  "cefadroxil",
+                  "cephradine",
+                  "cefaclor",
+                  "aztreonam"
+                  ],
         "exclude": [],
         "reason_ar": ("Listeria monocytogenes مقاومة جوهرياً لكل السيفالوسبورينات — "
                       "سبب معروف لفشل علاج التهاب السحايا. الخيار: Ampicillin."),
         "reason_en": ("Listeria monocytogenes is intrinsically resistant to ALL "
                       "cephalosporins — a known cause of meningitis treatment "
                       "failure. The option is ampicillin."),
-        "reference": "EUCAST Intrinsic Resistance v3.3, Table 4",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 4",
     },
 ]
 

@@ -228,7 +228,7 @@ GRAM_POSITIVE_ORGANISMS = frozenset([
 
 # ============================================================================
 #  INTRINSIC_RESISTANCE — CANONICAL SINGLE SOURCE OF TRUTH
-#  EUCAST Intrinsic Resistance & Unusual Phenotypes Tables v3.3
+#  EUCAST Expected Resistant Phenotypes v1.2 (2023) — supersedes Expert Rules v3.3
 #  Keys are substring-matched (org_key in org_l OR org_l in org_key), so both
 #  binomial and abbreviated organism forms are covered. Drug strings include
 #  common formulary VARIANTS (e.g. "Cefuroxime" AND "Cefuroxime sodium") so
@@ -267,7 +267,12 @@ INTRINSIC_RESISTANCE = {
                             "Ampicillin/Sulbactam", "Ampicillin + Sulbactam",
                             "Cephalexin", "Cefadroxil", "Cefazolin",
                             "Cefuroxime", "Cefuroxime sodium", "Cefaclor", "Cefoxitin",
-                            "Tetracycline", "Doxycycline", "Minocycline", "Tigecycline",
+                            "Tetracycline", "Doxycycline", "Minocycline",
+        # TETRACYCLINE NUANCE — EUCAST: S. marcescens is expected resistant to
+        # tetracycline and doxycycline but NOT minocycline or tigecycline. This
+        # list had it backwards, banning TIGECYCLINE (useful against MDR
+        # Serratia) while letting tetracycline and doxycycline through.
+        "Tetracycline", "Doxycycline",
                             "Nitrofurantoin", "Colistin", "Polymyxin B"],
 
     # Providencia: AmpC + tribe + intrinsic aminoglycoside (gentamicin/tobramycin)
@@ -284,7 +289,16 @@ INTRINSIC_RESISTANCE = {
                             "Ampicillin/Sulbactam", "Ampicillin + Sulbactam",
                             "Cephalexin", "Cefadroxil", "Cefazolin",
                             "Cefuroxime", "Cefuroxime sodium", "Cefaclor", "Cefoxitin",
-                            "Colistin", "Polymyxin B", "Nitrofurantoin", "Tigecycline"],
+                            "Colistin", "Polymyxin B", "Nitrofurantoin",
+                            # TETRACYCLINE NUANCE. EUCAST states that
+                            # S. marcescens is expected resistant to tetracycline
+                            # and doxycycline but NOT to minocycline or
+                            # tigecycline. This list had it exactly backwards: it
+                            # banned TIGECYCLINE -- a genuinely useful agent
+                            # against MDR Serratia -- while letting tetracycline
+                            # and doxycycline through. Wrong in the direction
+                            # that removes a working drug from the report.
+                            "Tetracycline", "Doxycycline"],
     "serratia spp.":       ["Ampicillin", "Amoxicillin", "Amoxicillin + Clavulanic acid",
                             "Cephalexin", "Cefazolin", "Cefuroxime", "Cefuroxime sodium",
                             "Cefoxitin", "Colistin", "Polymyxin B", "Nitrofurantoin"],

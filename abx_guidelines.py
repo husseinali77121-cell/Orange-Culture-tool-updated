@@ -39,7 +39,18 @@ ABX_GUIDELINES = {
         "hepatic_caution": False, "aware": "Watch", "high_po": False,
         "preg_status": "Safe", "preg_note": "",
         "child_safe": True, "interacts_with": [],
-        "aliases": ["unictam","sigmaclav","unasyn"],
+        "aliases": ["unictam","sigmaclav","unasyn",
+                    # Reversed / hyphenated spellings printed by some
+                    # analysers. Without these the span-claiming scanner
+                    # found no combination alias on the line and fell
+                    # through to the bare "Ampicillin" entry, attributing
+                    # the result to the wrong drug -- and, for
+                    # Acinetobacter, raising a false intrinsic-resistance
+                    # alert (bare ampicillin IS intrinsic, amp-sulbactam
+                    # is not).
+                    "sulbactam ampicillin","sulbactam/ampicillin",
+                    "ampicillin-sulbactam","ampicillin sulbactam",
+                    "amp-sulbactam","ampi-sulbactam"],
         "organisms": ["E. coli","Klebsiella spp.","Staphylococcus aureus",
                       "Proteus mirabilis","Enterococcus faecalis","Acinetobacter baumannii"],
         "specimen_notes": {
@@ -239,7 +250,9 @@ ABX_GUIDELINES = {
         "preg_status": "Safe", "preg_note": "",
         "child_safe": True,
         "interacts_with": ["Warfarin (مضادات التخثر)"],
-        "aliases": ["sulperazone","bakperazone","cefop-sulbactam","cefoperazone sulbactam"],
+        "aliases": ["sulperazone","bakperazone","cefop-sulbactam","cefoperazone sulbactam",
+                    "sulbactam cefoperazone","sulbactam/cefoperazone",
+                    "cefoperazone-sulbactam"],
         "organisms": ["Acinetobacter baumannii","Pseudomonas aeruginosa","Klebsiella spp.",
                       "E. coli","Proteus mirabilis","Staphylococcus aureus"],
         "specimen_notes": {

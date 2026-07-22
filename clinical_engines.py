@@ -1244,6 +1244,57 @@ def predict_esbl(organism: str, sir_map: Dict[str, str]) -> Dict[str, Any]:
     mero_R   = _r("Meropenem")
     mero_I   = sir_map.get("Meropenem") == "I"
     
+    # ── 0. P. aeruginosa carbapenem resistance is NOT a carbapenemase call ────
+    #
+    #  MECHANISM. In P. aeruginosa carbapenem resistance is predominantly
+    #  chromosomal — loss/down-regulation of the OprD porin, MexAB-OprM efflux
+    #  up-regulation, and derepressed AmpC (PDC) — not an acquired carbapenemase.
+    #  Carbapenemase-producing CRPA exists and is rising (MBLs are common in the
+    #  Middle East, so an Egyptian lab must never exclude it) — but it is the
+    #  MINORITY mechanism here, the opposite of the situation in Enterobacterales.
+    #
+    #  NO VALIDATED PHENOTYPIC RULE. EUCAST publishes screening/confirmation
+    #  algorithms for carbapenemases in Enterobacterales. It publishes none for
+    #  P. aeruginosa, because the beta-lactam disk pattern cannot separate
+    #  carbapenemase-producing from porin/efflux/AmpC CRPA. A "92% confidence
+    #  carbapenemase" call off a disk panel therefore has no standard behind it.
+    #
+    #  THE PATIENT-SAFETY BUG THIS FIXES. probability == "carbapenemase" sets
+    #  _is_carbapenemase in analyze_antibiotics(), which suppresses beta-lactams
+    #  wholesale. A P. aeruginosa with Meropenem R + Imipenem R but Ceftazidime S
+    #  had its SUSCEPTIBLE Ceftazidime moved to Avoid, and the physician was told
+    #  to go to Colistin — a more toxic drug — on the strength of an inference
+    #  the panel cannot support. Ceftazidime/Cefepime/Pip-Tazo testing S in the
+    #  same panel actively ARGUES AGAINST a broad carbapenemase, so those results
+    #  must be reported as tested and shown to the physician.
+    #
+    #  Enterobacterales keep the 92% tier below — it is correct there.
+    if "pseudomonas" in org_l and len(carb_R_list) >= 1:
+        _still_S = [d for d in ("Ceftazidime", "Cefepime", "Piperacillin + Tazobactam",
+                                "Piperacillin/Tazobactam", "Ceftolozane + Tazobactam",
+                                "Ceftazidime + Avibactam", "Aztreonam")
+                    if sir_map.get(d) == "S"]
+        _sug = (f" الأدوية التالية لسه S في نفس اللوحة: {', '.join(_still_S)} — "
+                "ده يرجّح آلية غير إنزيمية (فقد بورين/مضخة طرد) ويقلّل احتمال "
+                "الكاربابينيميز." if _still_S else
+                " مفيش بيتا-لاكتام S في اللوحة — احتمال الكاربابينيميز أعلى هنا.")
+        return {
+            "probability": "cr_pseudomonas",
+            "confidence": 60,
+            "mechanism": "Carbapenem-resistant P. aeruginosa — mechanism not determined",
+            "markers_R": carb_R_list,
+            "carbapenem_resistant": True,
+            "still_susceptible_betalactams": _still_S,
+            "detail": ("مقاومة كاربابينيم في P. aeruginosa — الأشيع فقد بورين OprD "
+                       "± مضخة طرد ± AmpC مُحدَث، مش إنزيم كاربابينيميز. "
+                       "الكاربابينيميز أقلية في السودوموناس ولا يوجد نمط قرصي "
+                       "معتمد من EUCAST يفرّق بينهم." + _sug),
+            "action": ("راجع Ceftazidime / Cefepime / Piperacillin-Tazobactam في نفس "
+                       "اللوحة قبل النزول على Colistin — لو فيهم S بلّغهم كما هم "
+                       "واستخدمهم. أكّد بـ mCIM / PCR فقط لو التصنيف هيغيّر العلاج "
+                       "أو لأغراض مكافحة العدوى."),
+        }
+
     # ── 1. Carbapenemase tiers (highest priority) ─────────────────────────
     if len(carb_R_list) >= 2:
         return {

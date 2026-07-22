@@ -2370,7 +2370,11 @@ if uploaded:
                 prob = esbl_result.get("probability")
                 _conf = esbl_result.get("confidence", 0)
                 _mech = esbl_result.get("mechanism", "")
-                if prob == "carbapenemase":
+                if prob == "cr_pseudomonas":
+                    _em = (f"[!] {_mech} (confidence {_conf}%)\n"
+                           + esbl_result.get("detail","") + "  \n🔹 " + esbl_result.get("action",""))
+                    st.warning(_em)
+                elif prob == "carbapenemase":
                     _em = (f"[!!] {_mech or 'Possible Carbapenemase (KPC/MBL/OXA)'} "
                            f"(confidence {_conf}%)\n"
                            + esbl_result.get("detail","") + "  \n🔹 " + esbl_result.get("action",""))
@@ -2670,7 +2674,7 @@ if uploaded:
                             f"<small>{item.get('intrinsic_reason','')}</small>",
                             icon="🧬",
                         )
-                    st.caption("📖 EUCAST Intrinsic Resistance v3.3 · CLSI M100 App. B")
+                    st.caption("📖 EUCAST Expected Resistant Phenotypes v1.2 (2023) · CLSI M100 App. B")
 
         if warned:
             with st.expander("🟡 Warnings / Dose Adjustment Required", expanded=True):

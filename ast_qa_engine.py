@@ -59,8 +59,25 @@ def _both_tested(a: str, b: str, sir: Dict[str, str]) -> bool:
 # Matching is substring-based (see _check_intrinsic_resistance).
 try:
     from clinical_data import INTRINSIC_RESISTANCE as _CANONICAL_INTRINSIC
-except Exception:                          # standalone use without clinical_data
-    _CANONICAL_INTRINSIC = {}
+except Exception as _exc:                  # pragma: no cover - deployment error
+    # DO NOT degrade to {} here. That is precisely the failure that shipped: the
+    # import fell through, the intrinsic table became empty, and _check_intrinsic
+    # _resistance() silently passed EVERY Gram-negative panel while the clinical
+    # engine was still banning drugs from its own copy. A QC layer that is
+    # accidentally switched off is more dangerous than one that refuses to start,
+    # because nothing on screen says it is off.
+    #
+    # The alternative -- embedding a second full copy of the 34-organism table
+    # here as a "standalone fallback" -- reintroduces the duplication this whole
+    # refactor removed, and a duplicate WILL drift. clinical_data.py ships in the
+    # same directory as this module in every Orange Lab deployment, so a missing
+    # import is a packaging bug to be fixed, not a state to be tolerated.
+    raise ImportError(
+        "ast_qa_engine requires clinical_data.py (canonical INTRINSIC_RESISTANCE) "
+        "in the same directory. Refusing to start with an empty intrinsic table, "
+        "which would silently disable every intrinsic-resistance QC check. "
+        f"Original import error: {_exc}"
+    ) from _exc
 
 # QA-only supplements (functional resistance, NOT EUCAST intrinsic)
 _QA_ONLY_INTRINSIC: Dict[str, List[str]] = {
