@@ -16,7 +16,6 @@ SPECIMEN_ORGANISM_MAP = {
         "E. coli", "Klebsiella spp.", "Proteus mirabilis",
         "Enterococcus faecalis", "Staphylococcus aureus", "MRSA",
         "Pseudomonas aeruginosa", "Acinetobacter baumannii",
-        "Enterobacterales (unspeciated)",
     ],
     "Blood": [
         "E. coli", "Klebsiella spp.", "Staphylococcus aureus", "MRSA",
@@ -24,34 +23,32 @@ SPECIMEN_ORGANISM_MAP = {
         "Streptococcus pneumoniae", "Enterococcus faecalis",
         "Salmonella spp.", "Proteus mirabilis",
         "Anaerobes (لاهوائيات)", "Stenotrophomonas maltophilia",
-        "Enterobacterales (unspeciated)",
+        "Neisseria meningitidis", "Listeria monocytogenes",
     ],
     "Sputum": [
         "Streptococcus pneumoniae", "H. influenzae", "Klebsiella spp.",
         "Pseudomonas aeruginosa", "Acinetobacter baumannii", "MRSA",
         "Staphylococcus aureus", "E. coli", "Legionella pneumophila",
         "Mycoplasma spp.", "Stenotrophomonas maltophilia",
-        "Enterobacterales (unspeciated)",
+        "Moraxella catarrhalis",
     ],
     "Wound Swab": [
         "Staphylococcus aureus", "MRSA", "E. coli", "Klebsiella spp.",
         "Pseudomonas aeruginosa", "Proteus mirabilis", "Acinetobacter baumannii",
         "Enterococcus faecalis", "Anaerobes (لاهوائيات)",
-        "Enterobacterales (unspeciated)",
     ],
     "Pus": [
         "Staphylococcus aureus", "MRSA", "E. coli", "Klebsiella spp.",
         "Pseudomonas aeruginosa", "Acinetobacter baumannii",
         "Anaerobes (لاهوائيات)", "Enterococcus faecalis", "Proteus mirabilis",
-        "Enterobacterales (unspeciated)",
     ],
     "Stool": [
         "Salmonella spp.", "Shigella spp.", "Campylobacter jejuni", "E. coli",
     ],
     "CSF": [
-        "Streptococcus pneumoniae", "H. influenzae", "MRSA",
-        "Staphylococcus aureus", "E. coli", "Klebsiella spp.",
-        "Enterobacterales (unspeciated)",
+        "Streptococcus pneumoniae", "Neisseria meningitidis", "H. influenzae",
+        "Listeria monocytogenes", "MRSA", "Staphylococcus aureus",
+        "E. coli", "Klebsiella spp.",
     ],
 }
 

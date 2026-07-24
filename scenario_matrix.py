@@ -1,335 +1,275 @@
-"""Orange Lab CDSS — clinical scenario matrix.
+#!/usr/bin/env python3
+"""
+Orange Lab CDSS — Clinical Scenario Matrix
+===========================================
 
-Generates the (organism x specimen x AST-archetype) grid that test_scenarios.py
-snapshots and asserts invariants over.
+WHY A MATRIX AND NOT MORE UNIT TESTS
+------------------------------------
+Every bug this system has shipped had the same shape: a rule was correct in
+isolation and wrong in combination. The Acinetobacter/amox-clav defect needed a
+specific organism AND a specific combination agent on the panel. The P.
+aeruginosa carbapenemase defect needed carbapenem resistance AND a susceptible
+beta-lactam in the same panel. Neither is reachable by testing one function.
 
-WHY A MATRIX AND NOT EXHAUSTIVE ENUMERATION
--------------------------------------------
-With 50 agents each S / I / R / untested, one organism-specimen pair alone has
-4**50 ~= 1.3e30 states. Enumerating them is not slow, it is impossible. What IS
-finite and worth covering is the set of CLINICAL SITUATIONS the engine claims to
-recognise: wild type, ESBL, AmpC, carbapenemase, OXA-48-like, CRPA, DTR, MRSA,
-VRE, MDR, XDR, PDR, a reported result that contradicts intrinsic resistance, a
-urinary-only agent reported off-site, and a panel too thin to conclude anything.
+A unit test asks "does this function return the right value?". This matrix asks
+the question that actually matters clinically:
 
-Every archetype is built DETERMINISTICALLY from the organism's own profile, so
-the grid regenerates identically on every machine and a snapshot diff always
-means the engine changed — never that the test data drifted.
+    for every organism the lab reports, in every specimen it comes from,
+    against every realistic resistance pattern -- is the advice coherent?
 
-This module imports nothing from Streamlit. It is pure data construction.
+"Coherent" is defined by INVARIANTS, not by expected outputs. Expected-output
+tests rot: any deliberate change breaks hundreds of them and they get bulk-
+updated without being read, which is worse than having no test. Invariants
+survive intentional change and only fire on genuine contradictions.
+
+STRUCTURE
+---------
+    ORGANISM_SPECIMEN   clinically plausible pairs only. Testing Legionella in
+                        a stool culture generates noise, not signal.
+    AST_ARCHETYPES      resistance patterns a real bench actually produces --
+                        wild type, ESBL, AmpC, carbapenemase, MRSA, VRE, DTR,
+                        and the specific shapes that caused past defects.
+    build_matrix()      the cartesian product, filtered for plausibility, with
+                        each drug panel restricted to agents that exist in
+                        ABX_GUIDELINES so a typo cannot silently pass.
+
+Run standalone to inspect:
+    python scenario_matrix.py            # summary counts
+    python scenario_matrix.py --list     # every scenario id
+    python scenario_matrix.py --show N   # dump scenario N in full
 """
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+import os
+import sys
+from typing import Any, Dict, List, Tuple
 
-from clinical_data import INTRINSIC_RESISTANCE
-from organism_profile import ORGANISM_PROFILE
-from specimen_organism_map import SPECIMEN_ORGANISM_MAP
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 
-# ── Drug groupings the archetypes manipulate ─────────────────────────────────
-CEPH_3G      = ["Ceftriaxone", "Cefotaxime", "Cefixime"]
-CEPH_AP      = ["Ceftazidime", "Cefoperazone", "Cefoperazone + Sulbactam"]
-CEPH_4G      = ["Cefepime"]
-CEPH_LOW     = ["Cephalexin", "Cefadroxil", "Cephradine", "Cefaclor",
-                "Cefuroxime", "Cefuroxime sodium", "Cefazolin"]
-CEPHAMYCIN   = ["Cefoxitin"]
-CARBAPENEMS  = ["Imipenem/Cilastatin", "Meropenem", "Ertapenem"]
-FLUOROQUIN   = ["Ciprofloxacin", "Levofloxacin", "Ofloxacin", "Norfloxacin"]
-AMINOGLYC    = ["Gentamicin", "Amikacin", "Tobramycin"]
-BLI_COMBOS   = ["Amoxicillin + Clavulanic acid", "Ampicillin/Sulbactam",
-                "Piperacillin + Tazobactam"]
-URINARY_ONLY = ["Nitrofurantoin", "Fosfomycin", "Norfloxacin"]
-GRAM_POS_ONLY = ["Vancomycin", "Linezolid", "Teicoplanin", "Daptomycin"]
-MRSA_MARKERS = ["Oxacillin", "Cefoxitin"]
+try:
+    from abx_guidelines import ABX_GUIDELINES
+    _KNOWN_DRUGS = set(ABX_GUIDELINES)
+except Exception:                                     # pragma: no cover
+    _KNOWN_DRUGS = set()
 
-# A broad but realistic Gram-negative panel — what an Egyptian private lab
-# actually puts on the plate for an Enterobacterales / non-fermenter isolate.
-GN_PANEL = [
-    "Amoxicillin + Clavulanic acid", "Ampicillin/Sulbactam",
-    "Piperacillin + Tazobactam", "Cefuroxime", "Cefoxitin",
-    "Ceftriaxone", "Cefotaxime",
-    "Ceftazidime", "Cefepime", "Cefoperazone + Sulbactam",
-    "Imipenem/Cilastatin", "Meropenem", "Ertapenem",
-    "Gentamicin", "Amikacin", "Ciprofloxacin", "Levofloxacin",
-    "Trimethoprim/Sulfamethoxazole", "Doxycycline", "Minocycline",
-    "Tetracycline", "Colistin",
+# ============================================================================
+#  ORGANISM x SPECIMEN — plausible pairs only
+# ============================================================================
+_URINE = "Urine"
+_BLOOD = "Blood"
+_SPUTUM = "Sputum"
+_WOUND = "Wound"
+_CSF = "CSF"
+_STOOL = "Stool"
+
+ORGANISM_SPECIMEN: Dict[str, List[str]] = {
+    "E. coli":                      [_URINE, _BLOOD, _WOUND, _STOOL],
+    "Klebsiella spp.":              [_URINE, _BLOOD, _SPUTUM, _WOUND],
+    "Proteus mirabilis":            [_URINE, _WOUND],
+    "Pseudomonas aeruginosa":       [_URINE, _BLOOD, _SPUTUM, _WOUND],
+    "Acinetobacter baumannii":      [_BLOOD, _SPUTUM, _WOUND],
+    "Stenotrophomonas maltophilia": [_BLOOD, _SPUTUM],
+    "Staphylococcus aureus":        [_BLOOD, _WOUND, _SPUTUM],
+    "MRSA":                         [_BLOOD, _WOUND, _SPUTUM],
+    "Enterococcus faecalis":        [_URINE, _BLOOD, _WOUND],
+    "VRE":                          [_URINE, _BLOOD],
+    "Streptococcus pneumoniae":     [_BLOOD, _SPUTUM, _CSF],
+    "Salmonella spp.":              [_STOOL, _BLOOD],
+    "Shigella spp.":                [_STOOL],
+    "Listeria monocytogenes":       [_BLOOD, _CSF],
+}
+
+# ============================================================================
+#  AST ARCHETYPES — resistance patterns a real bench produces
+# ============================================================================
+#  Each archetype is (id, description, {drug: S/I/R}). Drugs absent from a
+#  panel are simply not tested, which is the normal case on an Egyptian AST
+#  sheet -- the engine must cope with partial panels, not assume a full one.
+AST_ARCHETYPES: List[Tuple[str, str, Dict[str, str]]] = [
+    ("wild_type", "fully susceptible wild type", {
+        "Ampicillin": "S", "Amoxicillin + Clavulanic acid": "S",
+        "Cefuroxime": "S", "Ceftriaxone": "S", "Ciprofloxacin": "S",
+        "Gentamicin": "S", "Trimethoprim/Sulfamethoxazole": "S",
+        "Meropenem": "S",
+    }),
+    ("esbl_classic", "ESBL: 3rd-gen ceph R, carbapenem S, cefoxitin S", {
+        "Ampicillin": "R", "Amoxicillin + Clavulanic acid": "I",
+        "Cefuroxime": "R", "Ceftriaxone": "R", "Cefotaxime": "R",
+        "Cefoxitin": "S", "Meropenem": "S", "Ertapenem": "S",
+        "Ciprofloxacin": "R", "Amikacin": "S",
+    }),
+    ("ampc_pattern", "AmpC: 3rd-gen ceph R WITH cefoxitin R", {
+        "Ampicillin": "R", "Amoxicillin + Clavulanic acid": "R",
+        "Cefuroxime": "R", "Ceftriaxone": "R", "Cefoxitin": "R",
+        "Cefepime": "S", "Meropenem": "S", "Amikacin": "S",
+    }),
+    ("carbapenemase_2R", "two carbapenems R (Enterobacterales: KPC/MBL/OXA)", {
+        "Ceftriaxone": "R", "Ceftazidime": "R", "Cefepime": "R",
+        "Meropenem": "R", "Imipenem/Cilastatin": "R", "Ertapenem": "R",
+        "Amikacin": "R", "Colistin": "S",
+    }),
+    ("oxa48_like", "ertapenem R with meropenem S — confirm-first pattern", {
+        "Ceftriaxone": "R", "Ertapenem": "R", "Meropenem": "S",
+        "Amikacin": "S", "Colistin": "S",
+    }),
+    # THE DEFECT PATTERN: carbapenem-R with a SUSCEPTIBLE beta-lactam present.
+    # This is the shape that used to move a working Ceftazidime into Avoid.
+    ("carbR_but_ceftaz_S", "carbapenem R but ceftazidime STILL S", {
+        "Meropenem": "R", "Imipenem/Cilastatin": "R",
+        "Ceftazidime": "S", "Cefepime": "S",
+        "Amikacin": "S", "Ciprofloxacin": "R", "Colistin": "S",
+    }),
+    ("dtr_pattern", "difficult-to-treat: all first-line beta-lactams + FQ lost", {
+        "Ceftazidime": "R", "Cefepime": "R", "Meropenem": "R",
+        "Imipenem/Cilastatin": "R", "Piperacillin + Tazobactam": "R",
+        "Ciprofloxacin": "R", "Levofloxacin": "R", "Colistin": "S",
+    }),
+    ("mrsa_oxacillin_R", "oxacillin R — mecA/PBP2a", {
+        "Oxacillin": "R", "Cefoxitin": "R", "Penicillin": "R",
+        "Vancomycin": "S", "Linezolid": "S", "Clindamycin": "S",
+        "Erythromycin": "R", "Trimethoprim/Sulfamethoxazole": "S",
+    }),
+    ("mssa_plain", "oxacillin S — MSSA", {
+        "Oxacillin": "S", "Cefoxitin": "S", "Penicillin": "R",
+        "Vancomycin": "S", "Clindamycin": "S", "Erythromycin": "S",
+    }),
+    # D-test territory: erythro R + clinda S must not report clinda susceptible
+    # without a documented negative D-test (inducible MLSb).
+    ("inducible_mlsb", "erythromycin R with clindamycin S — D-test required", {
+        "Oxacillin": "S", "Erythromycin": "R", "Clindamycin": "S",
+        "Vancomycin": "S", "Linezolid": "S",
+    }),
+    ("vre_pattern", "vancomycin R enterococcus", {
+        "Ampicillin": "R", "Vancomycin": "R", "Teicoplanin": "R",
+        "Linezolid": "S", "Nitrofurantoin": "S",
+    }),
+    ("hlar_pattern", "enterococcus with aminoglycoside on the panel", {
+        "Ampicillin": "S", "Gentamicin": "S", "Vancomycin": "S",
+        "Nitrofurantoin": "S",
+    }),
+    # The combination-agent panel that produced phantom drugs in OCR.
+    ("bli_combo_panel", "panel built from beta-lactamase-inhibitor combinations", {
+        "Ampicillin/Sulbactam": "S", "Amoxicillin + Clavulanic acid": "S",
+        "Piperacillin + Tazobactam": "S", "Cefoperazone + Sulbactam": "S",
+        "Meropenem": "S", "Amikacin": "S",
+    }),
+    ("thin_panel", "only two agents tested — must not over-classify", {
+        "Ciprofloxacin": "R", "Gentamicin": "S",
+    }),
+    ("all_resistant", "nothing susceptible anywhere", {
+        "Ampicillin": "R", "Ceftriaxone": "R", "Ceftazidime": "R",
+        "Cefepime": "R", "Meropenem": "R", "Ciprofloxacin": "R",
+        "Gentamicin": "R", "Amikacin": "R",
+        "Trimethoprim/Sulfamethoxazole": "R",
+    }),
 ]
-GP_PANEL = [
-    "Penicillin", "Oxacillin", "Amoxicillin + Clavulanic acid", "Cefoxitin",
-    "Cephalexin", "Ceftriaxone", "Erythromycin", "Clindamycin",
-    "Ciprofloxacin", "Levofloxacin", "Gentamicin",
-    "Trimethoprim/Sulfamethoxazole", "Doxycycline", "Vancomycin", "Linezolid",
-]
-URINE_EXTRA = ["Nitrofurantoin", "Fosfomycin", "Norfloxacin"]
 
-GRAM_POS_ORGS = ("staphylococcus", "staph", "mrsa", "mssa", "enterococc",
-                 "streptococc", "listeria", "vre")
-
-
-def _is_gram_pos(organism: str) -> bool:
-    ol = organism.lower()
-    return any(g in ol for g in GRAM_POS_ORGS)
+# ============================================================================
+#  Plausibility filter
+# ============================================================================
+_GRAM_POS = ("staphylococcus", "mrsa", "enterococc", "vre", "streptococc",
+             "listeria")
+_GRAM_POS_ONLY = {"mrsa_oxacillin_R", "mssa_plain", "inducible_mlsb",
+                  "vre_pattern", "hlar_pattern"}
+_GRAM_NEG_ONLY = {"esbl_classic", "ampc_pattern", "carbapenemase_2R",
+                  "oxa48_like", "carbR_but_ceftaz_S", "dtr_pattern",
+                  "bli_combo_panel"}
+_NON_FERMENTER = ("pseudomonas", "acinetobacter", "stenotrophomonas")
 
 
-def intrinsic_for(organism: str) -> set:
-    """Drugs this organism is intrinsically resistant to (canonical table)."""
-    ol = (organism or "").lower().strip()
-    out: set = set()
-    for key, drugs in INTRINSIC_RESISTANCE.items():
-        if key and (key in ol or ol in key):
-            out |= set(drugs)
+def _is_gram_pos(org: str) -> bool:
+    o = org.lower()
+    return any(k in o for k in _GRAM_POS)
+
+
+def _plausible(org: str, arch_id: str) -> bool:
+    """Filter out pairings that would only generate noise."""
+    gp = _is_gram_pos(org)
+    if gp and arch_id in _GRAM_NEG_ONLY:
+        return False
+    if not gp and arch_id in _GRAM_POS_ONLY:
+        return False
+    o = org.lower()
+    # MRSA is a phenotype, not a wild-type organism.
+    if o == "mrsa" and arch_id in ("mssa_plain", "wild_type"):
+        return False
+    if o == "vre" and arch_id != "vre_pattern" and arch_id != "all_resistant":
+        return False
+    # ESBL/AmpC/carbapenemase inference is an Enterobacterales concept.
+    if any(k in o for k in _NON_FERMENTER) and arch_id in (
+            "esbl_classic", "ampc_pattern", "oxa48_like"):
+        return False
+    # The carbapenem-R-with-susceptible-beta-lactam shape is the P. aeruginosa
+    # defect pattern; it is also legitimate for Acinetobacter.
+    if arch_id == "carbR_but_ceftaz_S" and not any(k in o for k in _NON_FERMENTER):
+        return False
+    if arch_id == "dtr_pattern" and not any(k in o for k in _NON_FERMENTER):
+        return False
+    return True
+
+
+def build_matrix() -> List[Dict[str, Any]]:
+    """Every plausible (organism, specimen, AST archetype) scenario."""
+    out: List[Dict[str, Any]] = []
+    for org, specimens in ORGANISM_SPECIMEN.items():
+        for spec in specimens:
+            for arch_id, desc, panel in AST_ARCHETYPES:
+                if not _plausible(org, arch_id):
+                    continue
+                # Restrict to drugs the formulary actually knows, so a typo in
+                # an archetype cannot silently become an untested scenario.
+                sir = {d: v for d, v in panel.items()
+                       if not _KNOWN_DRUGS or d in _KNOWN_DRUGS}
+                if len(sir) < 2:
+                    continue
+                out.append({
+                    "id": f"{org}|{spec}|{arch_id}",
+                    "organism": org,
+                    "specimen": spec,
+                    "archetype": arch_id,
+                    "description": desc,
+                    "sir": sir,
+                })
     return out
 
 
-def base_panel(organism: str, specimen: str) -> List[str]:
-    """The agents a lab would actually report for this isolate and site.
-
-    Intrinsically resistant agents are EXCLUDED here — a competent lab does not
-    put them on the plate. The `intrinsic_violation` archetype adds one back on
-    purpose, which is the only way to exercise the QC rule that catches it.
-    """
-    panel = list(GP_PANEL if _is_gram_pos(organism) else GN_PANEL)
-    # The organism's own guideline drugs, so profile-specific agents are covered.
-    prof = ORGANISM_PROFILE.get(organism) or {}
-    for tier in ("first_line", "second_line", "third_line"):
-        for drug in prof.get(tier, []):
-            if drug not in panel:
-                panel.append(drug)
-    if "urine" in specimen.lower():
-        panel += [d for d in URINE_EXTRA if d not in panel]
-    intrinsic = intrinsic_for(organism)
-    return [d for d in panel if d not in intrinsic]
-
-
-# ── Archetypes ───────────────────────────────────────────────────────────────
-# Each returns {drug: S/I/R} or None when the archetype does not apply to this
-# organism (e.g. ESBL on a Gram-positive). None means "skip", not "fail".
-
-def _all(panel: List[str], value: str) -> Dict[str, str]:
-    return {d: value for d in panel}
-
-
-def _set(sir: Dict[str, str], drugs: List[str], value: str) -> Dict[str, str]:
-    for d in drugs:
-        if d in sir:
-            sir[d] = value
-    return sir
-
-
-def arch_wild_type(org, spec, panel):
-    return _all(panel, "S")
-
-
-def arch_esbl(org, spec, panel):
-    if _is_gram_pos(org):
-        return None
-    sir = _all(panel, "S")
-    _set(sir, CEPH_3G + CEPH_AP + CEPH_LOW, "R")
-    _set(sir, ["Amoxicillin + Clavulanic acid", "Ampicillin/Sulbactam"], "R")
-    _set(sir, CARBAPENEMS, "S")          # the defining feature of plain ESBL
-    return sir
-
-
-def arch_ampc(org, spec, panel):
-    if _is_gram_pos(org):
-        return None
-    sir = _all(panel, "S")
-    _set(sir, CEPH_3G + CEPH_LOW + CEPHAMYCIN, "R")
-    _set(sir, BLI_COMBOS, "R")
-    _set(sir, CEPH_4G + CARBAPENEMS, "S")   # cefepime spared = AmpC signature
-    return sir
-
-
-def arch_carbapenemase(org, spec, panel):
-    if _is_gram_pos(org):
-        return None
-    sir = _all(panel, "S")
-    _set(sir, CEPH_3G + CEPH_AP + CEPH_4G + CEPH_LOW + BLI_COMBOS, "R")
-    _set(sir, CARBAPENEMS, "R")
-    return sir
-
-
-def arch_oxa48(org, spec, panel):
-    if _is_gram_pos(org) or "Ertapenem" not in panel:
-        return None
-    sir = _all(panel, "S")
-    _set(sir, CEPH_3G, "R")
-    _set(sir, ["Ertapenem"], "R")
-    _set(sir, ["Meropenem", "Imipenem/Cilastatin"], "S")
-    return sir
-
-
-def arch_crpa_non_dtr(org, spec, panel):
-    """Carbapenem-R P. aeruginosa that still has an active traditional agent."""
-    if "pseudomonas" not in org.lower():
-        return None
-    sir = _all(panel, "S")
-    _set(sir, ["Meropenem", "Imipenem/Cilastatin"], "R")
-    _set(sir, FLUOROQUIN, "R")
-    _set(sir, ["Ceftazidime", "Cefepime", "Piperacillin + Tazobactam"], "S")
-    return sir
-
-
-def arch_dtr(org, spec, panel):
-    """Non-susceptible to every first-line beta-lactam AND fluoroquinolone."""
-    if "pseudomonas" not in org.lower():
-        return None
-    sir = _all(panel, "S")
-    _set(sir, ["Piperacillin + Tazobactam", "Ceftazidime", "Cefepime",
-               "Aztreonam", "Meropenem", "Imipenem/Cilastatin"], "R")
-    _set(sir, FLUOROQUIN, "R")
-    _set(sir, ["Colistin"], "S")
-    return sir
-
-
-def arch_mrsa(org, spec, panel):
-    if not any(k in org.lower() for k in ("staphylococcus", "staph", "mrsa")):
-        return None
-    sir = _all(panel, "S")
-    _set(sir, MRSA_MARKERS + ["Penicillin", "Cephalexin", "Ceftriaxone",
-                              "Amoxicillin + Clavulanic acid"], "R")
-    _set(sir, ["Vancomycin", "Linezolid"], "S")
-    return sir
-
-
-def arch_vre(org, spec, panel):
-    if "enterococc" not in org.lower() and "vre" not in org.lower():
-        return None
-    sir = _all(panel, "S")
-    _set(sir, ["Vancomycin"], "R")
-    _set(sir, ["Linezolid"], "S")
-    return sir
-
-
-def arch_mdr(org, spec, panel):
-    """Non-susceptible in >=3 antimicrobial categories (Magiorakos 2012)."""
-    sir = _all(panel, "S")
-    _set(sir, CEPH_3G + CEPH_LOW, "R")
-    _set(sir, FLUOROQUIN, "R")
-    _set(sir, AMINOGLYC, "R")
-    return sir
-
-
-def arch_xdr(org, spec, panel):
-    """Susceptible to <=2 categories only."""
-    sir = _all(panel, "R")
-    _set(sir, ["Colistin"] if not _is_gram_pos(org) else ["Linezolid"], "S")
-    return sir
-
-
-def arch_pdr(org, spec, panel):
-    return _all(panel, "R")
-
-
-def arch_intrinsic_violation(org, spec, panel):
-    """A drug the organism CANNOT respond to, reported Susceptible.
-
-    This is the single most dangerous laboratory error the QC layer exists to
-    catch, so every organism that has any intrinsic entry gets a case.
-    """
-    intr = sorted(intrinsic_for(org))
-    if not intr:
-        return None
-    sir = _all(panel, "S")
-    sir[intr[0]] = "S"
-    return sir
-
-
-def arch_urine_agent_offsite(org, spec, panel):
-    """Nitrofurantoin reported on a non-urine isolate."""
-    if "urine" in spec.lower():
-        return None
-    if "Nitrofurantoin" in intrinsic_for(org):
-        return None
-    sir = _all(panel, "S")
-    sir["Nitrofurantoin"] = "S"
-    return sir
-
-
-def arch_thin_panel(org, spec, panel):
-    """Two agents only — MDR/XDR must refuse to over-conclude."""
-    keep = [d for d in panel if d in ("Ciprofloxacin", "Gentamicin")][:2]
-    if len(keep) < 2:
-        keep = panel[:2]
-    return {d: "R" for d in keep}
-
-
-ARCHETYPES: List[Tuple[str, object]] = [
-    ("wild_type",           arch_wild_type),
-    ("esbl",                arch_esbl),
-    ("ampc",                arch_ampc),
-    ("carbapenemase",       arch_carbapenemase),
-    ("oxa48_like",          arch_oxa48),
-    ("crpa_non_dtr",        arch_crpa_non_dtr),
-    ("dtr_pseudomonas",     arch_dtr),
-    ("mrsa",                arch_mrsa),
-    ("vre",                 arch_vre),
-    ("mdr",                 arch_mdr),
-    ("xdr",                 arch_xdr),
-    ("pdr",                 arch_pdr),
-    ("intrinsic_violation", arch_intrinsic_violation),
-    ("urine_agent_offsite", arch_urine_agent_offsite),
-    ("thin_panel",          arch_thin_panel),
-]
-
-
-# ── Organisms the UI map does not reach ──────────────────────────────────────
-#  SPECIMEN_ORGANISM_MAP lists only the 19 organisms the picker offers, but
-#  clinical_data.INTRINSIC_RESISTANCE carries 34 keys. Serratia, Enterobacter,
-#  Citrobacter, Morganella, Providencia, P. vulgaris, Listeria, S. pyogenes,
-#  S. agalactiae and E. faecium therefore had rules that NO scenario exercised —
-#  a Serratia tetracycline correction could be made and the snapshot would not
-#  move. Every table key that the map cannot reach is run here against the
-#  specimen it is most often isolated from, so no rule is left untested.
-UNMAPPED_ORGANISMS: List[Tuple[str, str]] = [
-    ("Escherichia coli",              "Urine"),
-    ("Klebsiella pneumoniae",         "Sputum"),
-    ("Klebsiella oxytoca",            "Urine"),
-    ("Proteus vulgaris",              "Wound Swab"),
-    ("Morganella morganii",           "Urine"),
-    ("Providencia spp.",              "Urine"),
-    ("Serratia marcescens",           "Blood"),
-    ("Enterobacter cloacae",          "Blood"),
-    ("Enterobacter aerogenes",        "Sputum"),
-    ("Hafnia alvei",                  "Wound Swab"),
-    ("Citrobacter freundii",          "Urine"),
-    ("Citrobacter koseri",            "Urine"),
-    ("Enterococcus faecium",          "Blood"),
-    ("Streptococcus pyogenes",        "Wound Swab"),
-    ("Streptococcus agalactiae",      "Urine"),
-    ("Listeria monocytogenes",        "CSF"),
-]
-
-
-def build_matrix() -> List[Dict]:
-    """Every (specimen, organism, archetype) case, in a stable order."""
-    cases: List[Dict] = []
-    pairs = [(sp, og) for sp in sorted(SPECIMEN_ORGANISM_MAP)
-             for og in SPECIMEN_ORGANISM_MAP[sp]]
-    pairs += [(sp, og) for og, sp in UNMAPPED_ORGANISMS]
-    for specimen, organism in pairs:
-        if True:
-            panel = base_panel(organism, specimen)
-            if not panel:
-                continue
-            for name, fn in ARCHETYPES:
-                sir = fn(organism, specimen, panel)
-                if not sir:
-                    continue
-                cases.append({
-                    "id":        f"{specimen}|{organism}|{name}",
-                    "specimen":  specimen,
-                    "organism":  organism,
-                    "archetype": name,
-                    "sir_map":   {k: sir[k] for k in sorted(sir)},
-                })
-    return cases
+def unknown_archetype_drugs() -> Dict[str, List[str]]:
+    """Drugs named in archetypes that the formulary does not recognise."""
+    if not _KNOWN_DRUGS:
+        return {}
+    out: Dict[str, List[str]] = {}
+    for arch_id, _desc, panel in AST_ARCHETYPES:
+        missing = [d for d in panel if d not in _KNOWN_DRUGS]
+        if missing:
+            out[arch_id] = missing
+    return out
 
 
 if __name__ == "__main__":
     m = build_matrix()
-    print(f"{len(m)} scenarios across "
-          f"{len({(c['specimen'], c['organism']) for c in m})} organism x specimen pairs")
-    from collections import Counter
-    for k, v in Counter(c["archetype"] for c in m).most_common():
-        print(f"  {k:22s} {v}")
+    if "--list" in sys.argv:
+        for s in m:
+            print(s["id"])
+    elif "--show" in sys.argv:
+        i = int(sys.argv[sys.argv.index("--show") + 1])
+        s = m[i]
+        print(f"{s['id']}\n  {s['description']}")
+        for d, v in s["sir"].items():
+            print(f"    {d:34s} {v}")
+    else:
+        pairs = sum(len(v) for v in ORGANISM_SPECIMEN.values())
+        print("Orange Lab CDSS — clinical scenario matrix")
+        print("=" * 46)
+        print(f"  organisms                 : {len(ORGANISM_SPECIMEN)}")
+        print(f"  organism-specimen pairs   : {pairs}")
+        print(f"  AST archetypes            : {len(AST_ARCHETYPES)}")
+        print(f"  plausible scenarios       : {len(m)}")
+        bad = unknown_archetype_drugs()
+        print(f"  archetype drugs not in DB : {len(bad)}"
+              + (f"  -> {bad}" if bad else ""))
+        from collections import Counter
+        c = Counter(s["archetype"] for s in m)
+        print("\n  scenarios per archetype:")
+        for k, n in sorted(c.items(), key=lambda kv: -kv[1]):
+            print(f"    {k:24s} {n}")

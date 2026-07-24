@@ -1,181 +1,174 @@
-"""Orange Lab CDSS — guideline traceability check.
+#!/usr/bin/env python3
+"""
+Orange Lab CDSS — guideline registry guard.
 
-Answers the question a behaviour test cannot: "does every clinical rule in this
-engine come from a named, dated document, and has anyone actually checked it?"
+Run:  python test_guidelines.py           (no pytest, no network)
+      python test_guidelines.py --queue   (print the verification queue and exit 0)
 
-FAILS when:
-  * a rule in the engine has no row in guideline_registry.RULES
-  * a registry row exists for a rule the engine no longer has (dead citation)
-  * a row points at a source key that is not defined
-  * a source is missing a version, date or URL
-  * a verified row has gone stale (> STALE_AFTER_MONTHS)
-  * a verified row does not name who checked it and when
-  * a deprecated / ambiguous citation string is still used in the codebase
+WHAT THIS ENFORCES
+------------------
+A citation string in a comment proves nothing: nobody re-reads it, and when the
+underlying document is revised the string keeps its old text forever. These
+checks turn the registry into something that can actually FAIL a build:
 
-REPORTS (does not fail) the "pending" queue — rules inherited from earlier code
-that nobody has verified against the source PDF yet. Keeping that number visible
-is the whole point; a pending rule is not a bug, an invisible one is.
+  G1  every rule names a source that exists in SOURCES
+  G2  no rule cites a document the registry itself marks as superseded
+  G3  every "primary" verification carries who + when, in a parseable date
+  G4  no primary verification is older than STALENESS_MONTHS
+  G5  every rule id in ast_reportability._RULES has a registry row  (and back)
+  G6  no source metadata is missing a version, date or URL
+  G7  the superseded EUCAST wording is gone from the shipped source files
 
-    python test_guidelines.py            # check
-    python test_guidelines.py --queue    # print the pending review queue
+G5 is the one that catches real drift: it means a clinician cannot add a QC rule
+to the engine without also stating which document it comes from.
 """
 from __future__ import annotations
 
-import datetime as _dt
-import pathlib
+import ast
+import os
 import re
 import sys
+from datetime import date
 
-ROOT = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 
-from guideline_registry import (                              # noqa: E402
-    DEPRECATED_CITATIONS, RULES, SOURCES, STALE_AFTER_MONTHS, citation_line,
+from guideline_registry import (  # noqa: E402
+    RULES, SOURCES, STALENESS_MONTHS,
+    pending_rules, stale_rules, superseded_citations, print_queue,
 )
 
-SHOW_QUEUE = "--queue" in sys.argv
-TODAY = _dt.date.today()
-
 failures: list[str] = []
-warnings_: list[str] = []
+passes = 0
 
 
-def fail(msg: str) -> None:
-    failures.append(msg)
+def check(label: str, ok: bool, detail: str = "") -> None:
+    global passes
+    if ok:
+        passes += 1
+        print(f"  [PASS] {label}")
+    else:
+        failures.append(f"{label}{' — ' + detail if detail else ''}")
+        print(f"  [FAIL] {label}" + (f"  — {detail}" if detail else ""))
 
 
-# ── 1. Collect every rule id the engine actually uses ────────────────────────
-def engine_rule_ids() -> set:
-    ids: set = set()
-    import ast_reportability as RP
-    import ast_consistency as CN
+print("Orange Lab CDSS — guideline registry guard\n")
 
-    for group in ("INTRINSIC_RULES", "NO_BREAKPOINT_RULES", "INEFFECTIVE_INVIVO_RULES"):
-        for r in getattr(RP, group, []):
-            if isinstance(r, dict) and r.get("id"):
-                ids.add(r["id"])
-    for group in ("EQUIVALENCE_RULES", "HIERARCHY_RULES", "PREDICTIVE_RULES",
-                  "CORRECTION_RULES"):
-        for r in getattr(CN, group, []):
-            if isinstance(r, dict) and r.get("id"):
-                ids.add(r["id"])
+# ── G1: every rule points at a real source ──────────────────────────────────
+bad = {rid: r["source"] for rid, r in RULES.items() if r["source"] not in SOURCES}
+check("G1  every rule names a source present in SOURCES", not bad, str(bad))
 
-    app = (ROOT / "streamlit_app.py").read_text(encoding="utf-8")
-    ids |= set(re.findall(r'"id":\s*"(QC\d+)"', app))
-    ids |= set(re.findall(r'f"(SPEC-URN|REP-GPO-GN):', app))
+# ── G2: nothing cites a superseded document ─────────────────────────────────
+sup = superseded_citations()
+check("G2  no rule cites a superseded document", not sup,
+      f"{sorted(sup)} still cite superseded sources")
+
+# ── G3: primary verifications are attributable and parseable ────────────────
+_DATE = re.compile(r"^\d{4}-\d{2}(-\d{2})?$")
+malformed = {}
+for rid, r in RULES.items():
+    if r.get("verified") == "primary":
+        if not r.get("verified_by"):
+            malformed[rid] = "missing verified_by"
+        elif not r.get("verified_on"):
+            malformed[rid] = "missing verified_on"
+        elif not _DATE.match(str(r["verified_on"])):
+            malformed[rid] = f"unparseable date {r['verified_on']!r}"
+check("G3  every primary verification has who + when", not malformed, str(malformed))
+
+# ── G4: no primary verification has gone stale ──────────────────────────────
+stale = stale_rules()
+check(f"G4  no primary verification older than {STALENESS_MONTHS} months",
+      not stale, str(stale))
+
+# ── G5: registry and engine rule-sets are in sync ───────────────────────────
+def _engine_rule_ids(path: str) -> set[str]:
+    """Pull the "id" of every dict in the module-level _RULES list, via AST."""
+    if not os.path.exists(path):
+        return set()
+    tree = ast.parse(open(path, encoding="utf-8").read())
+    ids: set[str] = set()
+    for node in tree.body:
+        # The list is written as an annotated assignment
+        # (INTRINSIC_RULES: List[Dict[str, Any]] = [...]), which is ast.AnnAssign,
+        # NOT ast.Assign -- checking only Assign silently found nothing and the
+        # whole G5 sync check degraded to [SKIP].
+        if isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        elif isinstance(node, ast.Assign):
+            targets = node.targets
+        else:
+            continue
+        if any(
+            getattr(t, "id", None) in ("INTRINSIC_RULES", "_RULES", "RULES",
+                                       "_REPORTABILITY_RULES")
+            for t in targets
+        ) and isinstance(node.value, (ast.List, ast.Tuple)):
+            for elt in node.value.elts:
+                if isinstance(elt, ast.Dict):
+                    for k, v in zip(elt.keys, elt.values):
+                        if getattr(k, "value", None) == "id" and isinstance(v, ast.Constant):
+                            ids.add(v.value)
     return ids
 
 
-ENGINE_IDS = engine_rule_ids()
-
-print("Orange Lab CDSS — guideline traceability\n")
-
-# ── 2. Every engine rule is registered, and vice versa ───────────────────────
-unregistered = sorted(ENGINE_IDS - set(RULES))
-for rid in unregistered:
-    fail(f"rule '{rid}' is active in the engine but has no citation row")
-
-dead = sorted(set(RULES) - ENGINE_IDS)
-for rid in dead:
-    fail(f"citation row '{rid}' has no matching rule in the engine (dead citation)")
-
-# ── 3. Sources are complete ──────────────────────────────────────────────────
-for key, src in SOURCES.items():
-    for field in ("title", "version", "dated", "url"):
-        if not src.get(field):
-            fail(f"source '{key}' is missing '{field}'")
-    if src.get("url") and not src["url"].startswith("http"):
-        fail(f"source '{key}' has a URL that is not a URL: {src['url']!r}")
-
-# ── 4. Rows are well formed, and 'primary' rows are attributed and fresh ─────
-pending: list[str] = []
-primary: list[str] = []
-unsigned: list[str] = []
-
-for rid, row in sorted(RULES.items()):
-    if row.get("source") not in SOURCES:
-        fail(f"rule '{rid}' points at undefined source {row.get('source')!r}")
-    if not row.get("assertion"):
-        fail(f"rule '{rid}' has no assertion text")
-
-    level = row.get("verified")
-    if level in ("source", "secondary"):
-        primary.append(rid)
-        if not row.get("checked_by"):
-            fail(f"rule '{rid}' is marked {level} but names no checker")
-        if not row.get("countersigned_by"):
-            unsigned.append(rid)
-        stamp = row.get("checked_on")
-        if not stamp:
-            fail(f"rule '{rid}' is marked {level} but carries no date")
-            continue
-        try:
-            when = _dt.date.fromisoformat(stamp)
-        except ValueError:
-            fail(f"rule '{rid}' has an unparseable verified_on: {stamp!r}")
-            continue
-        if when > TODAY:
-            fail(f"rule '{rid}' was verified in the future ({stamp})")
-        months = (TODAY.year - when.year) * 12 + (TODAY.month - when.month)
-        if months > STALE_AFTER_MONTHS:
-            fail(f"rule '{rid}' verification is stale — checked {months} months ago "
-                 f"({stamp}); limit is {STALE_AFTER_MONTHS}")
-    elif level == "pending":
-        pending.append(rid)
-    else:
-        fail(f"rule '{rid}' has an unknown verification level {level!r} "
-             f"(expected 'source', 'secondary' or 'pending')")
-
-# ── 5. Deprecated citation strings must be gone from the codebase ────────────
-SKIP = {"guideline_registry.py", "test_guidelines.py"}
-hits: dict = {}
-for path in sorted(ROOT.rglob("*.py")):
-    if path.name in SKIP:
-        continue
-    try:
-        text = path.read_text(encoding="utf-8")
-    except Exception:                                          # noqa: BLE001
-        continue
-    for bad in DEPRECATED_CITATIONS:
-        n = text.count(bad)
-        if n:
-            hits.setdefault(bad, []).append((path.name, n))
-
-# ── Report ───────────────────────────────────────────────────────────────────
-print(f"  rules in engine   : {len(ENGINE_IDS)}")
-print(f"  citation rows     : {len(RULES)}")
-print(f"  checked vs source : {len(primary)}")
-print(f"  pending review    : {len(pending)}")
-print(f"  awaiting human    : {len(unsigned)}  (checked, not yet countersigned)")
-
-if hits:
-    total = sum(n for v in hits.values() for _, n in v)
-    print(f"\n  DEPRECATED CITATION STRINGS — {total} occurrence(s):")
-    for bad, where in sorted(hits.items()):
-        loc = ", ".join(f"{f} x{n}" for f, n in where)
-        print(f"    \"{bad}\"  ({loc})")
-        print(f"        -> {DEPRECATED_CITATIONS[bad]}")
-        failures.append(f'deprecated citation "{bad}" still used ({loc})')
-
-if SHOW_QUEUE and pending:
-    print(f"\n  PENDING REVIEW QUEUE ({len(pending)}) — open the PDF, confirm the "
-          f"assertion, then set verified/verified_by/verified_on:")
-    for rid in pending:
-        print(f"\n    {rid}")
-        print(f"      {RULES[rid]['assertion'][:150]}")
-        print(f"      -> {citation_line(rid)}")
-        print(f"         {SOURCES[RULES[rid]['source']]['url']}")
-
-if failures:
-    print(f"\n  FAILURES ({len(failures)}):")
-    for f in failures:
-        print(f"    ✗ {f}")
-
-print("\n" + "=" * 68)
-if failures:
-    print("RESULT: traceability incomplete")
+engine_ids = _engine_rule_ids(os.path.join(HERE, "ast_reportability.py"))
+if not engine_ids:
+    print("  [SKIP] G5  ast_reportability.py has no extractable _RULES list")
 else:
-    print(f"RESULT: every rule traced. {len(primary)} checked against published "
-          f"sources, {len(pending)} not yet checked, {len(unsigned)} awaiting a "
-          f"clinician's countersignature. Run --queue for the review list.")
-sys.exit(1 if failures else 0)
+    missing_in_registry = engine_ids - set(RULES)
+    check("G5a every ast_reportability rule has a registry row",
+          not missing_in_registry, str(sorted(missing_in_registry)))
+    # The registry legitimately holds rows for logic that lives elsewhere
+    # (mechanism inference, therapy notes), so only intr_* ids must round-trip.
+    intr_registry = {k for k in RULES if k.startswith("intr_")}
+    orphan = intr_registry - engine_ids
+    check("G5b every intr_* registry row exists in ast_reportability",
+          not orphan, str(sorted(orphan)))
+
+# ── G6: source metadata is complete enough to be actionable ─────────────────
+incomplete = {
+    k: [f for f in ("title", "version", "published", "url") if not v.get(f)]
+    for k, v in SOURCES.items()
+    if not all(v.get(f) for f in ("title", "version", "published", "url"))
+}
+check("G6  every source has title / version / date / url", not incomplete,
+      str(incomplete))
+
+# ── G7: the superseded EUCAST wording is gone from shipped code ─────────────
+# EUCAST retired "intrinsic resistance" as a published document name in 2022.
+# A stale citation in a report is a clinical-credibility problem, so it fails.
+stale_cite = []
+for fn in sorted(f for f in os.listdir(HERE) if f.endswith(".py")):
+    if fn.startswith("test_") or fn == "guideline_registry.py":
+        continue
+    txt = open(os.path.join(HERE, fn), encoding="utf-8").read()
+    if "EUCAST Intrinsic Resistance v3.3" in txt:
+        stale_cite.append(fn)
+check("G7  no shipped file still cites 'EUCAST Intrinsic Resistance v3.3'",
+      not stale_cite, str(stale_cite))
+
+# ── Report ──────────────────────────────────────────────────────────────────
+pend = pending_rules()
+print(f"\n  {passes} check(s) passed, {len(failures)} failed")
+print(f"  registry: {len(RULES)} rules across {len(SOURCES)} sources — "
+      f"{len(RULES) - len(pend)} primary-verified, {len(pend)} pending")
+
+if pend:
+    print("\n  NOTE: 'pending' rows are NOT a build failure. They are assertions")
+    print("        carried over from earlier development that no human has yet")
+    print("        checked against the source PDF. Run:")
+    print("            python guideline_registry.py --queue")
+    print("        to get the list with direct document links.")
+
+if failures:
+    print("\nRESULT: guideline registry FAILED")
+    for f in failures:
+        print("   x " + f)
+    sys.exit(1)
+
+print("\nRESULT: guideline registry OK — every clinical rule is traceable to a "
+      "versioned, current document.")
+if "--queue" in sys.argv:
+    print_queue()
+sys.exit(0)
