@@ -87,7 +87,7 @@ ORGANISM_PROFILE = {
         },
         "note": (
             "🔴 MDR — Ampicillin/Sulbactam أو Cefoperazone/Sulbactam "
-            "بجرعات عالية هو الأساس (IDSA AMR 2025)."
+            "بجرعات عالية هو الأساس (IDSA AMR Guidance v4.0 (2024))."
         ),
     },
     "Staphylococcus aureus": {
@@ -121,7 +121,8 @@ ORGANISM_PROFILE = {
         "avoid": ["Oxacillin","Penicillin","Cephalexin","Cefadroxil","Cefaclor",
                   "Cefuroxime","Cefuroxime sodium","Ceftriaxone",
                   "Amoxicillin + Clavulanic acid","Ampicillin/Sulbactam",
-                  "Piperacillin + Tazobactam","Ertapenem"],
+                  "Piperacillin + Tazobactam","Ertapenem",
+                  "Cephalosporins","Carbapenems"],   # class-wide: also catches Cefixime/Cefepime/Ceftazidime/Cefazolin/Meropenem/Imipenem (PBP2a -> all beta-lactams fail, bar anti-MRSA ceph)
         "urine_note": (
             "جميع البيتا-لاكتام لا تعمل على MRSA (mecA gene — PBP2a resistance).\n"
             "Clindamycin: D-test مطلوب إذا Erythromycin=R — لا تستخدم بدون تأكيد.\n"
@@ -226,7 +227,7 @@ ORGANISM_PROFILE = {
     },
     "H. influenzae": {
         "first_line": ["Amoxicillin + Clavulanic acid","Cefuroxime","Ceftriaxone"],
-        "second_line": ["Azithromycin","Erythromycin","Levofloxacin",
+        "second_line": ["Azithromycin","Levofloxacin",
                          "Trimethoprim/Sulfamethoxazole"],
         "third_line":  [],
         "avoid": ["Ampicillin"],
@@ -277,7 +278,7 @@ ORGANISM_PROFILE = {
     },
     "Stenotrophomonas maltophilia": {
         "first_line": ["Trimethoprim/Sulfamethoxazole"],
-        "second_line": ["Levofloxacin","Doxycycline"],
+        "second_line": ["Minocycline", "Levofloxacin","Doxycycline"],
         "third_line":  [],
         "avoid": ["Carbapenems","Ertapenem","Meropenem","Imipenem/Cilastatin",
                   "Aminoglycosides","Ceftriaxone","Cefepime"],
@@ -324,42 +325,34 @@ ORGANISM_PROFILE.update({
         "note": "⚠️ Rickettsia ليست جرثومة مزرعية روتينية في هذا السياق، لكن أضيفت للحفاظ على اتساق البيانات العلاجية.",
     },
 
-    "Neisseria meningitidis": {
-        "first_line": ["Ceftriaxone", "Penicillin"],
-        "second_line": ["Cefotaxime", "Ampicillin"],
-        "third_line":  ["Meropenem"],
-        "avoid": [],
-        "urine_note": "",
+    # Generic fallback for reports that read "Gram Negative Bacilli" with no
+    # species identification (very common locally). Lets the Enterobacterales
+    # logic (ESBL predictor, ceph/carbapenem QC) run WITHOUT forcing a specific
+    # species. Name must stay exactly "Enterobacterales (unspeciated)" so its
+    # lowercase contains the "enterobacterales" substring matched in
+    # streamlit_app.py (ESBL_PRODUCERS + QC004). Deliberately NO genus-specific
+    # intrinsic resistance and NO assumed AmpC — the genus is unknown.
+    "Enterobacterales (unspeciated)": {
+        "first_line":  ["Amoxicillin + Clavulanic acid", "Cefuroxime", "Ciprofloxacin"],
+        "second_line": ["Ceftriaxone", "Piperacillin + Tazobactam", "Amikacin"],
+        "third_line":  ["Ertapenem", "Meropenem"],
+        "avoid": [],   # unspeciated -> do NOT assume intrinsic R (e.g. Klebsiella's Ampicillin)
+        "urine_note": (
+            "كائن Enterobacterales غير محدد النوع — العلاج يُوجَّه بنتيجة الحساسية.\n"
+            "لا تُفترض مقاومة intrinsic جينس-محددة (مثل Ampicillin في Klebsiella) قبل الـ ID."
+        ),
         "specimen_context": {
-            "CSF":   "🔴 السبب الرئيسي لالتهاب السحايا الوبائي — ابدأ Ceftriaxone فوراً + عزل تنفسي.",
-            "Blood": "🔴 Meningococcemia — طارئ؛ خطر DIC وفشل الغدة الكظرية (Waterhouse-Friderichsen).",
+            "Sputum":     "⚠️ GNB غير معرّف في البلغم — قيّم جودة العينة (احتمال colonization) واطلب ID.",
+            "Urine":      "🔬 افصل ABU عن UTI بالأعراض + العدّ؛ اطلب ID عند الحاجة.",
+            "Blood":      "🔴 Enterobacterales bacteremia — اطلب ID + MIC عاجل.",
+            "Pus":        "🔬 خراجات البطن — Enterobacterales شائعة؛ ID مهم.",
+            "Wound Swab": "🔬 عدوى جروح — افصل colonization عن infection.",
         },
-        "note": "🔴 طارئ طبي — Ceftriaxone تجريبياً؛ Penicillin عند إثبات الحساسية. Chemoprophylaxis للمخالطين (Rifampicin / Ciprofloxacin / Ceftriaxone).",
-    },
-
-    "Listeria monocytogenes": {
-        "first_line": ["Ampicillin"],
-        "second_line": ["Trimethoprim/Sulfamethoxazole"],
-        "third_line":  ["Meropenem"],
-        "avoid": ["Cephalosporins (كل الجيل)"],
-        "urine_note": "",
-        "specimen_context": {
-            "CSF":   "🔴 التهاب سحايا في حديثي الولادة وكبار السن والحوامل ونقص المناعة — أضِف Ampicillin تجريبياً.",
-            "Blood": "🔴 Listeriosis — بكتيريميا في الحمل ونقص المناعة.",
-        },
-        "note": "🔴 مقاوم طبيعياً لكل السيفالوسبورينات — لذلك يُضاف Ampicillin للعلاج التجريبي للسحايا في الفئات عالية الخطورة. Ampicillin + Gentamicin للتآزر في الحالات الشديدة.",
-    },
-
-    "Moraxella catarrhalis": {
-        "first_line": ["Amoxicillin + Clavulanic acid", "Cefuroxime"],
-        "second_line": ["Azithromycin", "Trimethoprim/Sulfamethoxazole", "Doxycycline"],
-        "third_line":  [],
-        "avoid": ["Ampicillin", "Amoxicillin"],
-        "urine_note": "",
-        "specimen_context": {
-            "Sputum": "🔬 من أسباب COPD exacerbation والتهاب الأذن/الجيوب — تقريباً كل السلالات تنتج beta-lactamase.",
-        },
-        "note": "🔬 ~100% تنتج beta-lactamase → Amoxicillin/Ampicillin وحدهما غير فعّالين. استخدم Amoxicillin-Clavulanate أو Cephalosporin.",
+        "note": (
+            "🔬 Enterobacterales غير محدد النوع (GNB). الجينس غير معروف — لا AmpC ولا "
+            "مقاومة intrinsic جينس-محددة مفترضة. يُنصح بـ ID + MIC. الـ ESBL predictor "
+            "يعمل من نمط السيفالوسبورين في الـ AST."
+        ),
     },
 })
 

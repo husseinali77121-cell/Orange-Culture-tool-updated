@@ -1,12 +1,23 @@
-streamlit>=1.30,<1.42
+# Orange Lab Microbiology CDSS — runtime dependencies
+#
+# CORRECTED after an import audit: the previous file both MISSED two packages the
+# code imports and DECLARED four it never uses.
+#
+#   Missing  -> arabic-reshaper, python-bidi. streamlit_app.py imports both at
+#               line 47-48 and sets ARABIC_SUPPORT=False when the import fails.
+#               Without them the flag was silently False in deployment, so every
+#               Arabic string in the dashboard image and the PDF rendered as
+#               disconnected, unshaped letters. This is the single most visible
+#               production defect in the file.
+#   Unused   -> fpdf, pandas, scikit-learn, reportlab. Zero imports anywhere in
+#               the repo; they only slowed the build and widened the dependency
+#               surface. PDF rendering is done by weasyprint.
+
+streamlit
 numpy
 opencv-python-headless
 pytesseract
-Pillow
-fpdf
-pandas
-scikit-learn
-reportlab
+Pillow>=8.0.0          # draw.rounded_rectangle() requires 8.0.0+
 weasyprint
 arabic-reshaper
 python-bidi

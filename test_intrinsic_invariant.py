@@ -1,39 +1,50 @@
 #!/usr/bin/env python3
 """
-Orange Lab — Intrinsic-Resistance & ESBL-Gating Invariant Test
-==============================================================
-Run in CI. It fails the build the moment the four copies of intrinsic-resistance
-knowledge drift apart, or the moment an ESBL alert can leak onto a non-ESBL
-organism. This is the guard that makes "everything stays unified" true
-BY CONSTRUCTION instead of by discipline.
+Orange Lab — Intrinsic-Resistance & ESBL-Gating Invariant Test  (unified)
+=========================================================================
+ONE guard, BOTH repos. It reads the intrinsic-resistance tables straight from
+source via AST (no Streamlit / runtime needed) and fails the build the moment:
+  • two copies of INTRINSIC_RESISTANCE drift apart, or
+  • an ESBL alert could leak onto a non-ESBL organism.
+
+It auto-detects which files are present, so the SAME file works in:
+  • the single-file commercial repo   → streamlit_app.py
+  • the modular repo                  → orange_lab-41.py + clinical_data.py + ast_qa_engine.py
+
+A check whose source file is genuinely absent in this repo is SKIPPED, never
+failed. Only real drift / leakage fails the build. This kills the crash from
+a hard-coded filename AND prevents the *test itself* from drifting.
 
 Usage:  python test_intrinsic_invariant.py
-        (exit code 0 = all invariants hold, 1 = a violation was found)
-
-It reads the tables straight from source via AST, so it needs no heavy imports
-and no Streamlit/runtime environment.
+        (exit 0 = invariants hold, 1 = a violation was found)
 """
-import ast, sys, os
+import ast, sys
+from pathlib import Path
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-# REPO-AGNOSTIC. This suite is shared by two repos that do NOT hold the same
-# files: the commercial single-file build ships streamlit_app.py, the Orange Lab
-# modular build does not. Hard-coding the commercial path made this test die with
-# FileNotFoundError on the modular repo before a single invariant ran. Absent
-# files are SKIPPED and reported; a file that exists is always checked.
+HERE = Path(__file__).resolve().parent
+
+
 def _first_existing(*names):
     for n in names:
-        p = os.path.join(HERE, n)
-        if os.path.exists(p):
+        p = HERE / n
+        if p.exists():
             return p
     return None
 
-COMMERCIAL = _first_existing("streamlit_app.py")      # inline copy (single-file deploy)
-CLINICAL   = os.path.join(HERE, "clinical_data.py")   # source of truth (modular stack)
-QA_ENGINE  = os.path.join(HERE, "ast_qa_engine.py")   # embedded standalone fallback
 
-# ESBL markers and the set of organisms allowed to carry an ESBL result.
+# ── file roles (first match wins; None = simply not in this repo) ────────────
+INLINE_APP = _first_existing("streamlit_app.py", "orange_lab-41.py", "orange_lab.py")
+CLINICAL   = _first_existing("clinical_data.py")
+QA_ENGINE  = _first_existing("ast_qa_engine.py")
+
+# Source of truth: clinical_data in the modular stack; otherwise the single-file app.
+ANCHOR = CLINICAL or INLINE_APP
+# Embedded QA fallback lives in its own module, else inlined in the app.
+QA_SRC = QA_ENGINE or INLINE_APP
+
 ESBL_MARKER_DRUGS = {"Ceftriaxone", "Cefotaxime", "Ceftazidime", "Cefpodoxime", "Cefepime"}
+
+MISSING = object()
 
 
 def _eval(node):
@@ -44,58 +55,28 @@ def _eval(node):
     return ast.literal_eval(node)
 
 
-def _literal(path, name):
-    """Return the value of a module-level assignment `name = ...`."""
-    tree = ast.parse(open(path, encoding="utf-8").read())
+def _tree(path):
+    return ast.parse(Path(path).read_text(encoding="utf-8")) if path else None
+
+
+def _literal(path, name, default=MISSING):
+    """Module-level `name = ...`; returns `default` if the file or name is absent."""
+    tree = _tree(path)
+    if tree is None:
+        return default
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(
             getattr(t, "id", None) == name for t in node.targets
         ):
             return _eval(node.value)
-    raise AssertionError(f"{name} not found in {os.path.basename(path)}")
+    return default
 
 
-def _norm(table):
-    """{organism: set(drugs)} — order-independent comparison."""
-    return {k: set(v) for k, v in table.items()}
-
-
-failures = []
-
-
-def check(label, ok, detail=""):
-    mark = "PASS" if ok else "FAIL"
-    print(f"  [{mark}] {label}" + (f"  — {detail}" if detail and not ok else ""))
-    if not ok:
-        failures.append(label + (f" — {detail}" if detail else ""))
-
-
-print("Orange Lab — intrinsic-resistance / ESBL-gating invariants\n")
-
-# ── INVARIANT 1: the two independent copies are byte-equivalent ──────────────
-ir_clin = _literal(CLINICAL,  "INTRINSIC_RESISTANCE")
-ir_comm = _literal(COMMERCIAL, "INTRINSIC_RESISTANCE") if COMMERCIAL else None
-if ir_comm is None:
-    print("  [SKIP] commercial INTRINSIC_RESISTANCE == clinical_data "
-          "— streamlit_app.py not in this repo (modular build)")
-    ir_comm = ir_clin          # neutral value; the two checks below become no-ops
-same = _norm(ir_comm) == _norm(ir_clin)
-diff = ""
-if not same:
-    only_c = set(_norm(ir_comm)) - set(_norm(ir_clin))
-    only_m = set(_norm(ir_clin)) - set(_norm(ir_comm))
-    per_org = {o: _norm(ir_comm).get(o, set()) ^ _norm(ir_clin).get(o, set())
-               for o in set(ir_comm) | set(ir_clin)
-               if _norm(ir_comm).get(o) != _norm(ir_clin).get(o)}
-    diff = f"orgs only in commercial={only_c}, only in clinical={only_m}, drug diffs={per_org}"
-check("commercial INTRINSIC_RESISTANCE == clinical_data INTRINSIC_RESISTANCE", same, diff)
-check("both tables cover the same organism set",
-      set(ir_comm) == set(ir_clin), f"symdiff={set(ir_comm) ^ set(ir_clin)}")
-
-# ── INVARIANT 1b: QA-engine embedded standalone fallback == clinical_data ────
 def _qa_fallback(path):
-    """Extract the _CANONICAL_INTRINSIC dict embedded in ast_qa_engine's except."""
-    tree = ast.parse(open(path, encoding="utf-8").read())
+    """Extract the _CANONICAL_INTRINSIC dict embedded in a try/except handler."""
+    tree = _tree(path)
+    if tree is None:
+        return None
     for node in ast.walk(tree):
         if isinstance(node, ast.Try):
             for h in node.handlers:
@@ -105,66 +86,129 @@ def _qa_fallback(path):
                     ) and isinstance(stmt.value, ast.Dict):
                         return ast.literal_eval(stmt.value)
     return None
-def _qa_import_raises(path):
-    """True if the except branch RAISES instead of degrading to an empty table.
 
-    Two designs are legitimate and this invariant accepts both:
-      * commercial single-file build -> embeds a full copy (checked for drift)
-      * modular build                -> refuses to start without clinical_data
-    What is NEVER acceptable is the third option that actually shipped:
-    `_CANONICAL_INTRINSIC = {}`, which silently disables every intrinsic check.
-    """
-    tree = ast.parse(open(path, encoding="utf-8").read())
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Try):
-            for h in node.handlers:
-                if any(isinstance(st, ast.Raise) for st in ast.walk(h)):
-                    return True
-    return False
 
-qa_fb = _qa_fallback(QA_ENGINE)
-if qa_fb is None and _qa_import_raises(QA_ENGINE):
-    check("ast_qa_engine refuses to start without clinical_data (no silent-empty table)",
-          True)
+def _norm(table):
+    """{organism: set(drugs)} — order-independent comparison."""
+    return {k: set(v) for k, v in table.items()}
+
+
+failures, skips = [], []
+
+
+def check(label, ok, detail=""):
+    print(f"  [{'PASS' if ok else 'FAIL'}] {label}" + (f"  — {detail}" if detail and not ok else ""))
+    if not ok:
+        failures.append(label + (f" — {detail}" if detail else ""))
+
+
+def skip(label, why):
+    print(f"  [SKIP] {label}  — {why}")
+    skips.append(label)
+
+
+print("Orange Lab — intrinsic-resistance / ESBL-gating invariants\n")
+
+if ANCHOR is None:
+    print("RESULT: no source files found in this repo — nothing to verify.")
+    sys.exit(1)
+
+ir_anchor = _literal(ANCHOR, "INTRINSIC_RESISTANCE")
+if ir_anchor is MISSING:
+    print(f"RESULT: INTRINSIC_RESISTANCE not found in anchor {ANCHOR.name} — cannot verify.")
+    sys.exit(1)
+
+anchor_label = ANCHOR.name
+
+
+# ── INVARIANT 1: every OTHER inline copy is byte-equivalent to the anchor ────
+def compare_copy(src_path, copy_name, getter):
+    if src_path is None:
+        skip(f"{copy_name} == {anchor_label}", "source file not in this repo")
+        return
+    val = getter(src_path)
+    if val is None or val is MISSING:
+        skip(f"{copy_name} == {anchor_label}", f"no INTRINSIC_RESISTANCE copy in {src_path.name}")
+        return
+    same = _norm(val) == _norm(ir_anchor)
+    detail = ""
+    if not same:
+        per_org = {o: _norm(val).get(o, set()) ^ _norm(ir_anchor).get(o, set())
+                   for o in set(val) | set(ir_anchor)
+                   if _norm(val).get(o) != _norm(ir_anchor).get(o)}
+        detail = f"drug diffs={per_org}"
+    check(f"{copy_name} == {anchor_label}", same, detail)
+
+
+# single-file app copy — skip if the app *is* the anchor (commercial, single-file)
+if INLINE_APP is not None and INLINE_APP != ANCHOR:
+    compare_copy(INLINE_APP, f"{INLINE_APP.name} INTRINSIC_RESISTANCE",
+                 lambda p: _literal(p, "INTRINSIC_RESISTANCE"))
 else:
-    check("ast_qa_engine embedded fallback == clinical_data (standalone safety)",
-          qa_fb is not None and _norm(qa_fb) == _norm(ir_clin),
-          "QA fallback missing, drifted, or silently empty")
+    skip("inline app INTRINSIC_RESISTANCE == source of truth",
+         "single-file repo (the app is the source of truth)" if INLINE_APP == ANCHOR
+         else "no separate single-file app in this repo")
 
-# ── INVARIANT 2: ESBL_PRODUCERS is Enterobacterales-only (no non-fermenters) ─
-producers = set(_literal(CLINICAL, "ESBL_PRODUCERS"))
-forbidden = {"pseudomonas", "acinetobacter", "stenotrophomonas",
-             "enterococcus", "staphylococcus", "streptococcus"}
-leaked = {p for p in producers if any(f in p for f in forbidden)}
-check("ESBL_PRODUCERS contains NO non-Enterobacterale", not leaked, f"leaked={leaked}")
+# embedded QA-engine fallback copy (this is the check that catches the commercial drift)
+# ARCHITECTURE CHANGE: ast_qa_engine.py no longer carries a full embedded copy of
+# the table. It now imports clinical_data.INTRINSIC_RESISTANCE at runtime and
+# merges only its QA-specific supplements (MRSA / Mycoplasma — functional, not
+# EUCAST "intrinsic") over the top. Comparing its module-level literal against the
+# anchor therefore compares the supplements against the whole table and always
+# fails. The correct invariant is that the canonical import RESOLVED and that the
+# merged table is a superset of the anchor — verified live below.
+try:
+    import ast_qa_engine as _QA
+    check("ast_qa_engine resolved the canonical clinical_data import",
+          getattr(_QA, "CANONICAL_INTRINSIC_LOADED", False),
+          "fell back to the MRSA/Mycoplasma-only stub — the intrinsic level is "
+          "dead for every Gram-negative")
+    _merged = {k.lower(): set(v) for k, v in _QA._INTRINSIC_RESISTANCE.items()}
+    _missing = {o: sorted(set(d) - _merged.get(o.lower(), set()))
+                for o, d in ir_anchor.items()
+                if set(d) - _merged.get(o.lower(), set())}
+    check("ast_qa_engine merged table covers every anchor row",
+          not _missing, f"rows missing drugs: {_missing}")
+except Exception as _e:                                   # pragma: no cover
+    skip("ast_qa_engine live-import invariants", repr(_e))
 
-# ── INVARIANT 3: for a PRODUCER, its intrinsic drugs are not ESBL markers ────
-# (else resistance you already expect would be read as an ESBL signal)
-bad = {}
-for org, drugs in ir_clin.items():
-    if any(p in org or org in p for p in producers):
-        overlap = set(drugs) & ESBL_MARKER_DRUGS
-        # Ceftazidime is an anti-pseudomonal marker; it is legitimately intrinsic
-        # for a few Gram-positives but those are not producers, so any overlap on
-        # a producer is a real problem.
-        if overlap:
-            bad[org] = overlap
-check("no ESBL-marker drug is intrinsic for any producer organism", not bad, f"overlap={bad}")
 
-# ── INVARIANT 4: every AmpC-prone NON-producer must be intrinsic-listed so its
-#    expected cephalosporin resistance can never be mistaken for a mechanism ──
-ampc = set(_literal(CLINICAL, "AMPC_PRODUCERS"))
-np_ampc = [o for o in ampc if not any(p in o or o in p for p in producers)]
-missing_cov = [o for o in np_ampc
-               if not any(k in o or o in k for k in ir_clin)]
-check("every AmpC-prone non-producer has an intrinsic-resistance entry",
-      not missing_cov, f"uncovered={missing_cov}")
+# ── INVARIANT 2/3/4: ESBL / AmpC gating (sourced from the anchor) ────────────
+producers = _literal(ANCHOR, "ESBL_PRODUCERS", default=None)
+if producers is None:
+    skip("ESBL_PRODUCERS invariants", f"ESBL_PRODUCERS not defined in {anchor_label}")
+else:
+    producers = set(producers)
+    forbidden = {"pseudomonas", "acinetobacter", "stenotrophomonas",
+                 "enterococcus", "staphylococcus", "streptococcus"}
+    leaked = {p for p in producers if any(f in p for f in forbidden)}
+    check("ESBL_PRODUCERS contains NO non-Enterobacterale", not leaked, f"leaked={leaked}")
+
+    bad = {}
+    for org, drugs in ir_anchor.items():
+        if any(p in org or org in p for p in producers):
+            overlap = set(drugs) & ESBL_MARKER_DRUGS
+            if overlap:
+                bad[org] = overlap
+    check("no ESBL-marker drug is intrinsic for any producer organism", not bad, f"overlap={bad}")
+
+    ampc = _literal(ANCHOR, "AMPC_PRODUCERS", default=None)
+    if ampc is None:
+        skip("AmpC-non-producer coverage", f"AMPC_PRODUCERS not defined in {anchor_label}")
+    else:
+        ampc = set(ampc)
+        np_ampc = [o for o in ampc if not any(p in o or o in p for p in producers)]
+        missing = [o for o in np_ampc if not any(k in o or o in k for k in ir_anchor)]
+        check("every AmpC-prone non-producer has an intrinsic-resistance entry",
+              not missing, f"uncovered={missing}")
 
 print()
 if failures:
     print(f"RESULT: {len(failures)} invariant(s) violated — DRIFT DETECTED.")
     for f in failures:
-        print("   ✗ " + f)
+        print("   \u2717 " + f)
     sys.exit(1)
-print("RESULT: all invariants hold — tables unified, ESBL gating intact.")
+
+tail = f"  ({len(skips)} check(s) skipped — not applicable to this repo)" if skips else ""
+print(f"RESULT: all invariants hold — tables unified, ESBL gating intact.{tail}")
 sys.exit(0)

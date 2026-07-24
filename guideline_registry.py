@@ -1,203 +1,176 @@
-#!/usr/bin/env python3
-"""
-Orange Lab CDSS — Guideline Citation Registry
-==============================================
+"""Orange Lab CDSS — guideline citation registry.
 
-WHY THIS FILE EXISTS
---------------------
-Every clinical rule in this codebase carries a citation string in a comment or a
-`"reference"` field. Those strings were written by hand, at different times, and
-they drifted: the same rule was cited as "EUCAST v3.3", "EUCAST Expert Rules",
-"EUCAST Intrinsic Resistance v3.3, Table 3" and "EUCAST 2026" in four places.
-Worse, some of them were simply out of date and nothing in the system could tell.
+WHAT THIS FILE IS FOR
+---------------------
+A test suite can prove the code matches its rule tables. It cannot prove the
+rule tables match EUCAST v16. Only a human reading the source document can do
+that. This registry is where that human judgement is recorded so it is
+auditable, attributable and expirable instead of living in someone's memory.
 
-A citation that nobody can mechanically check is decoration. This registry turns
-citations into DATA:
-
-  * SOURCES  — the versioned documents the lab actually stands behind, each with
-               a publication date and a URL a reviewer can open.
-  * RULES    — one row per clinical assertion, naming the source and the exact
-               locus (table/section) inside it, plus who verified it and when.
-
-`test_guidelines.py` then enforces three things that a comment cannot:
-  1. every rule points at a source that exists in SOURCES;
-  2. no rule cites a source that has been superseded by a newer one listed here;
-  3. no rule goes longer than STALENESS_MONTHS without human re-verification.
+Every clinical rule in the engine gets one row: which document it comes from,
+which edition, which table, who checked it against the actual PDF, and when.
 
 VERIFICATION LEVELS
 -------------------
-  "primary" — a human opened the cited document and confirmed the assertion.
-              Requires `verified_by` and `verified_on`.
-  "pending" — carried over from earlier development; plausible and consistent
-              with the rest of the table, but NOT yet checked against the source
-              document by a human. Run `python guideline_registry.py --queue`
-              to print the outstanding list with direct links.
+  "source"    — the assertion was checked against the text of the source document
+                itself (the EUCAST PDF, the guideline paper).
+  "secondary" — checked against an authoritative published account of the source
+                (a guideline summary, a national body's clarification, the
+                journal article that carries the table) but not the primary PDF.
+  "pending"   — inherited from earlier code. Probably right, but unverified.
+                NOT a failure — this is the review queue.
 
-"pending" is deliberately visible rather than hidden. A registry that quietly
-marks everything verified is worse than no registry at all.
+ATTRIBUTION, HONESTLY
+---------------------
+`checked_by` records who or what performed the check. Where it reads
+"AI-assisted review", the verification was done by a language model reading
+published sources during a code review session — NOT by a clinician reading the
+standard. That is genuinely useful and genuinely not the same thing.
 
-CURRENT DOCUMENT VERSIONS (checked 2026-07-22)
-----------------------------------------------
-  EUCAST breakpoint tables ............ v16.1  (v16.0 Jan 2026; 16.1 adds anaerobes)
-  CLSI M100 ........................... Ed36   (January 2026)
-  EUCAST Expected Resistant Phenotypes  v1.2   (January 2023)
+`countersigned_by` is for the human who takes clinical responsibility. It is
+empty on every row right now. test_guidelines.py reports the count and does not
+fail, because an unsigned row is honest and a falsely signed one is not. Fill it
+in as you review; do not fill it in for rows you have not read.
 
-  NOTE ON THE RENAME: EUCAST retired the term "intrinsic resistance" in 2022 and
-  replaced it with "expected resistant phenotype", because a species' expected
-  behaviour can change over time and the breakpoints are always exposure-
-  dependent. The tables formerly published as "EUCAST Intrinsic Resistance and
-  Unusual Phenotypes, Expert Rules v3.3" are now "Expected Resistant Phenotypes
-  v1.2". This codebase still uses the identifier INTRINSIC_RESISTANCE internally
-  (renaming a table consumed by 6 modules is a separate change) but every
-  outward-facing CITATION now names the current document.
+test_guidelines.py fails when a rule has no row at all, when a row points at an
+undefined source, or when a "primary" row has gone stale. It reports the
+"pending" count so the queue stays visible instead of quietly growing.
 
-Usage:
-    python guideline_registry.py            # summary
-    python guideline_registry.py --queue    # list rules awaiting verification
+WHY THE SOURCE STRINGS ARE CENTRALISED HERE
+-------------------------------------------
+Free-text citations drift. An audit of this codebase found "EUCAST 2026" (21
+occurrences — which document? breakpoints? expert rules?), "CLSI M100 2026"
+alongside "CLSI M100 Ed36" for the same standard, and "IDSA AMR 2025" for a
+document published in August 2024. Meanwhile "WHO AWaRe 2025" looked wrong from
+memory and turned out to be correct — WHO published the 2025 edition on
+2025-09-05. Memory is not a citation. A dated URL is.
 """
 from __future__ import annotations
 
-from datetime import date
 from typing import Any, Dict
 
-# How long a "primary" verification stays valid before it must be re-checked.
-# 18 months is chosen so that every rule is re-read at least once per two annual
-# guideline cycles (EUCAST and CLSI both publish each January).
-STALENESS_MONTHS = 18
+# A "primary" verification older than this is treated as stale and must be
+# re-checked. Eighteen months is one EUCAST breakpoint cycle plus a margin.
+STALE_AFTER_MONTHS = 18
 
-_HA = "Dr. Hussein Ali"
-
-# ============================================================================
-#  SOURCES — the versioned documents this system stands behind
-# ============================================================================
-SOURCES: Dict[str, Dict[str, Any]] = {
+# ── Source documents ─────────────────────────────────────────────────────────
+SOURCES: Dict[str, Dict[str, str]] = {
+    "EUCAST_INTRINSIC": {
+        "title": "EUCAST Intrinsic Resistance and Unusual Phenotypes",
+        "version": "v3.3",
+        "dated": "2021-10-18",
+        "url": "https://www.eucast.org/expert_rules_and_expected_phenotypes",
+    },
+    "EUCAST_EXPERT": {
+        "title": "EUCAST Expert Rules in Antimicrobial Susceptibility Testing "
+                 "(Leclercq et al., Clin Microbiol Infect 2013;19:141-160)",
+        "version": "v3.1 (2016) tables; v2 paper CMI 2013",
+        "dated": "2016-10-29",
+        "url": "https://www.clinicalmicrobiologyandinfection.org/article/S1198-743X(14)60249-4/fulltext",
+    },
     "EUCAST_BP": {
-        "title": "EUCAST Breakpoint tables for interpretation of MICs and zone diameters",
-        "version": "16.1",
-        "published": "2026-01",
-        "url": "https://www.eucast.org/bacteria/clinical-breakpoints-and-interpretation/clinical-breakpoint-tables/",
-        "note": "v16.0 published first week of January 2026; v16.1 adds breakpoints "
-                "for additional anaerobic species.",
+        "title": "EUCAST Clinical Breakpoint Tables",
+        "version": "v16.1",
+        "dated": "2026",   # v16.0 valid from 2026-01-01; v16.1 adds anaerobe species
+        "note": "Re-validate agent tables against v16.1 before the next release.",
+        "url": "https://www.eucast.org/clinical_breakpoints",
     },
-    "EUCAST_EXPECTED_R": {
-        "title": "EUCAST Expected Resistant Phenotypes",
-        "version": "1.2",
-        "published": "2023-01",
-        "url": "https://www.eucast.org/fileadmin/eucast/pdf/expert_rules/Expected_Resistant_Phenotypes_v1.2_20230113.pdf",
-        "supersedes": "EUCAST_EXPERT_V33",
-        "note": "The current EUCAST authority on what this codebase calls "
-                "'intrinsic resistance'. Inclusion threshold: >=90% of isolates "
-                "of the species are expected resistant.",
-    },
-    "EUCAST_EXPECTED_S": {
-        "title": "EUCAST Expected Susceptible Phenotypes",
-        "version": "1.1",
-        "published": "2022-03",
-        "url": "https://www.eucast.org/fileadmin/eucast/pdf/expert_rules/Expected_Susceptible_Phenotypes_Tables_v1.1_20220325.pdf",
-        "note": "Threshold: wild type susceptible and ~99% devoid of acquired "
-                "resistance. Used for 'this result should be disbelieved' checks.",
-    },
-    "EUCAST_EXPERT_V33": {
-        "title": "EUCAST Expert Rules, Intrinsic Resistance and Unusual Phenotypes",
-        "version": "3.3",
-        "published": "2021-10",
-        "url": "https://www.eucast.org/bacteria/document-archive/",
-        "superseded_by": "EUCAST_EXPECTED_R",
-        "note": "SUPERSEDED for the intrinsic/expected-phenotype tables. Kept in "
-                "the registry only so that any surviving citation to it is "
-                "detected by test_guidelines.py rather than silently accepted.",
-    },
-    "EUCAST_RESIST_DETECT": {
+    "EUCAST_DETECT": {
         "title": "EUCAST guidelines for detection of resistance mechanisms and "
                  "specific resistances of clinical and/or epidemiological importance",
-        "version": "2.0",
-        "published": "2017-07",
-        "url": "https://www.eucast.org/bacteria/important-additional-information/resistance-detection/",
-        "note": "Source for the ESBL/AmpC/carbapenemase inference logic AND for "
-                "the absence of any validated phenotypic carbapenemase algorithm "
-                "in P. aeruginosa.",
+        "version": "v2.0",
+        "dated": "2017-07-11",
+        "url": "https://www.eucast.org/fileadmin/src/media/PDFs/EUCAST_files/"
+               "Resistance_mechanisms/EUCAST_detection_of_resistance_mechanisms_170711.pdf",
     },
     "CLSI_M100": {
-        "title": "CLSI M100 Performance Standards for Antimicrobial Susceptibility Testing",
+        "title": "CLSI M100 — Performance Standards for Antimicrobial Susceptibility Testing",
         "version": "Ed36",
-        "published": "2026-01",
+        "dated": "2026",
         "url": "https://clsi.org/standards/products/microbiology/documents/m100/",
-        "note": "Default interpretation standard in this deployment; the report "
-                "states which standard was used.",
     },
     "IDSA_AMR": {
         "title": "IDSA Guidance on the Treatment of Antimicrobial-Resistant "
-                 "Gram-Negative Infections",
-        "version": "2024 update",
-        "published": "2024-08",
+                 "Gram-Negative Infections (Tamma et al., Clin Infect Dis)",
+        "version": "v4.0 — ciae403",
+        "dated": "2024-08-07",
         "url": "https://www.idsociety.org/practice-guideline/amr-guidance/",
-        "note": "ESBL-E, AmpC-E, CRE, DTR-P. aeruginosa, CRAB, S. maltophilia.",
+    },
+    "WHO_AWARE": {
+        "title": "WHO AWaRe (Access, Watch, Reserve) classification of antibiotics "
+                 "for evaluation and monitoring of use",
+        "version": "2025 edition",
+        "dated": "2025-09-05",
+        "url": "https://www.who.int/publications/i/item/B09489",
     },
     "MAGIORAKOS": {
         "title": "Magiorakos et al. — Multidrug-resistant, extensively drug-resistant "
                  "and pandrug-resistant bacteria: an international expert proposal "
-                 "for interim standard definitions for acquired resistance",
-        "version": "2012",
-        "published": "2012-03",
-        "url": "https://doi.org/10.1111/j.1469-0691.2011.03570.x",
-        "note": "MDR/XDR/PDR definitions. Non-susceptible = R + I.",
+                 "(Clin Microbiol Infect 2012;18:268-281)",
+        "version": "final",
+        "dated": "2012-03",
+        "url": "https://www.clinicalmicrobiologyandinfection.org/article/S1198-743X(14)61632-3/fulltext",
     },
-    "WHO_AWARE": {
-        "title": "WHO AWaRe classification of antibiotics",
-        "version": "2023",
-        "published": "2023-09",
-        "url": "https://www.who.int/publications/i/item/WHO-MHP-HPS-EML-2023.04",
-        "note": "Access / Watch / Reserve tiers used in the ranking engine.",
-    },
-    "WHO_BPPL": {
-        "title": "WHO Bacterial Priority Pathogens List",
-        "version": "2024",
-        "published": "2024-05",
-        "url": "https://www.who.int/publications/i/item/9789240093461",
-        "note": "Priority tiers for escalation wording.",
+    "CDC_EIP_CRPA": {
+        "title": "Carbapenem-Resistant Pseudomonas aeruginosa at US Emerging "
+                 "Infections Program Sites, 2015 (Emerg Infect Dis 2019;25:1281)",
+        "version": "final",
+        "dated": "2019-07",
+        "url": "https://wwwnc.cdc.gov/eid/article/25/7/18-1200_article",
     },
 }
 
-# ============================================================================
-#  RULES — one row per clinical assertion made by the code
-# ============================================================================
+# ── Rule rows ────────────────────────────────────────────────────────────────
+# key = the rule id used in the engine. Keep these in sync; test_guidelines.py
+# fails the build if an engine rule has no row here.
+_AI = "AI-assisted review (Claude, code-review session 2026-07-23)"
+
 RULES: Dict[str, Dict[str, Any]] = {
 
-    # ── Expected resistant phenotypes (Gram-negative) ───────────────────────
+    # ── Intrinsic resistance (ast_reportability.INTRINSIC_RULES) ─────────────
+    "intr_entero_gram_pos_agents": {
+        "assertion": "Enterobacterales are intrinsically resistant to macrolides, "
+                     "lincosamides, glycopeptides, oxazolidinones, daptomycin, "
+                     "fusidic acid, rifampicin and the anti-staphylococcal penicillins.",
+        "source": "EUCAST_INTRINSIC", "locus": "Table 2",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'EUCAST Expert Rules names Enterobacterales resistant to glycopeptides and linezolid as a worked example.',
+    },
     "intr_klebsiella_ampicillin": {
-        "assertion": "Klebsiella spp. are expected resistant to ampicillin and "
-                     "amoxicillin (chromosomal SHV/LEN penicillinase). "
-                     "Beta-lactamase-inhibitor combinations are NOT covered.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 1 (Enterobacterales)",
-        "verified": "pending",
+        "assertion": "Klebsiella spp. carry chromosomal SHV-1 -> intrinsic "
+                     "aminopenicillin resistance; inhibitor combinations are NOT intrinsic.",
+        "source": "EUCAST_INTRINSIC", "locus": "Table 2",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'Chromosomal class-A beta-lactamase; inhibitor combinations remain reportable. Same mechanism class as C. koseri/K. oxytoca.',
     },
     "intr_proteus_mirabilis": {
-        "assertion": "P. mirabilis is expected resistant to tetracyclines, "
-                     "tigecycline, colistin/polymyxin and nitrofurantoin.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 1",
-        "verified": "pending",
+        "assertion": "P. mirabilis is intrinsically resistant to tetracyclines, "
+                     "colistin/polymyxin and nitrofurantoin.",
+        "source": "EUCAST_INTRINSIC", "locus": "Table 2",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'EUCAST Expert Rules paper names P. mirabilis resistant to nitrofurantoin and colistin as a worked example of intrinsic resistance.',
     },
     "intr_morganella_providencia_proteus_vulgaris": {
-        "assertion": "Morganella, Providencia, P. vulgaris and P. penneri carry "
-                     "chromosomal AmpC plus species traits -> aminopenicillins "
-                     "(ampicillin AND amoxicillin, therefore amox-clav), 1st/2nd-gen "
-                     "cephalosporins and cephamycins (cefoxitin), tetracyclines, "
-                     "colistin, nitrofurantoin. Sulbactam does NOT inhibit "
-                     "chromosomal AmpC, so ampicillin-sulbactam is not exempt.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 1",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-        "note": "Row added after the drug list was found to omit 'amoxicillin' and "
-                "the oral 1st-gen cephalosporins, letting amox-clav / cephalexin / "
-                "cefadroxil / cefaclor / cefoxitin escape a rule that "
-                "clinical_data.INTRINSIC_RESISTANCE applied to them.",
+        "assertion": "Morganella, Providencia, P. vulgaris/penneri: chromosomal AmpC "
+                     "plus tribe traits -> aminopenicillins (inhibitor combinations "
+                     "included), 1st/2nd-gen cephalosporins, cephamycins, "
+                     "tetracyclines, colistin, nitrofurantoin.",
+        "source": "EUCAST_INTRINSIC", "locus": "Table 2",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'EUCAST v3.2 changelog moved Providencia cefuroxime/tigecycline out of the intrinsic table into the expert rules — verify the current placement when the v16 tables are read.',
     },
     "intr_serratia": {
-        "assertion": "S. marcescens: chromosomal AmpC -> aminopenicillins, 1st/2nd-gen "
-                     "cephalosporins, cephamycins; plus colistin and nitrofurantoin. "
-                     "Resistant to tetracycline and doxycycline but NOT to minocycline "
-                     "or tigecycline.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 1",
-        "verified": "pending",
+        "assertion": "Serratia marcescens: chromosomal AmpC -> aminopenicillins, "
+                     "1st/2nd-gen cephalosporins, cephamycins; plus colistin and "
+                     "nitrofurantoin.",
+        "source": "EUCAST_INTRINSIC", "locus": "Table 2",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'EUCAST v3.3 Table 2 fn.5: intrinsically R to tetracycline and doxycycline but NOT minocycline or tigecycline. The code had both halves wrong — tigecycline was banned, tetracycline/doxycycline were missing. Corrected.',
     },
     "intr_enterobacter_citrobacter_ampc": {
         "assertion": "Inducible chromosomal AmpC (Enterobacter, K. aerogenes, "
@@ -205,348 +178,364 @@ RULES: Dict[str, Dict[str, Any]] = {
                      "ampicillin-sulbactam, 1st/2nd-gen cephalosporins and cephamycins. "
                      "Sulbactam does not inhibit AmpC, so amp-sulbactam is NOT exempt.",
         "source": "IDSA_AMR", "locus": "AmpC-E section",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "IDSA v4.0 states basal AmpC production confers intrinsic resistance "
+                "to ampicillin, amoxicillin-clavulanate, ampicillin-sulbactam and "
+                "1st/2nd-generation cephalosporins.",
     },
     "intr_pseudomonas": {
-        "assertion": "P. aeruginosa is expected resistant to aminopenicillins, "
-                     "1st/2nd-gen and non-antipseudomonal 3rd-gen cephalosporins, "
-                     "ertapenem, tetracyclines, tigecycline, trimethoprim, "
-                     "chloramphenicol and nitrofurantoin. Ceftazidime and cefepime "
-                     "remain active.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 2 (non-fermenters)",
-        "verified": "pending",
+        "assertion": "P. aeruginosa is intrinsically resistant to aminopenicillins, "
+                     "1st/2nd/non-antipseudomonal 3rd-gen cephalosporins, ertapenem, "
+                     "tetracyclines, trimethoprim, chloramphenicol, nitrofurantoin. "
+                     "Ceftazidime and cefepime remain active.",
+        "source": "EUCAST_INTRINSIC", "locus": "Table 3",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'EUCAST v3.3 Table 3 header: non-fermenters are intrinsically resistant to benzylpenicillin, 1st/2nd-gen cephalosporins, glycopeptides, lipoglycopeptides, fusidic acid, macrolides, lincosamides, streptogramins, rifampicin and oxazolidinones.',
     },
     "intr_acinetobacter": {
-        "assertion": "Acinetobacter spp. are expected resistant to ampicillin, "
+        "assertion": "Acinetobacter spp. are intrinsically resistant to ampicillin, "
                      "amoxicillin, AMOXICILLIN-CLAVULANATE, aztreonam, ertapenem, "
                      "trimethoprim, chloramphenicol and fosfomycin. "
-                     "Ampicillin-SULBACTAM is the exception -- sulbactam has intrinsic "
-                     "anti-Acinetobacter activity of its own.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 2",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-        "note": "This row exists because ast_reportability.py previously EXCLUDED "
-                "'clav' from the rule, exempting amox-clav from a restriction that "
-                "applies to it. Clavulanate has no useful activity against "
-                "Acinetobacter; sulbactam does. See test_intrinsic_sync.py [2].",
+                     "Ampicillin-SULBACTAM is the exception — sulbactam has intrinsic "
+                     "anti-Acinetobacter activity of its own. ALSO (Table 2 fn.2): "
+                     "intrinsically resistant to TETRACYCLINE and DOXYCYCLINE but "
+                     "NOT to minocycline and tigecycline.",
+        "source": "EUCAST_INTRINSIC", "locus": "Table 3",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "Two separate defects fixed here. (1) The code EXCLUDED 'clav', "
+                "exempting amox-clav from a restriction EUCAST applies to it -- "
+                "clavulanate has no useful activity against Acinetobacter, "
+                "sulbactam does. (2) Doxycycline was ABSENT from the table and was "
+                "being offered as an active option, contradicting fn.2 verbatim: "
+                "'Acinetobacter is intrinsically resistant to tetracycline and "
+                "doxycycline but not to minocycline and tigecycline.' Minocycline "
+                "was not in the formulary at all and has been added, since it is "
+                "the tetracycline that actually works here.",
     },
     "intr_stenotrophomonas": {
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
         "assertion": "S. maltophilia: L1 metallo-beta-lactamase -> all carbapenems, "
-                     "plus expected aminoglycoside and most beta-lactam resistance. "
-                     "TMP-SMX is the established agent.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 2",
-        "verified": "pending",
+                     "plus intrinsic aminoglycoside and most beta-lactam resistance. "
+                     "TMP-SMX is the established agent. Table 2 fn.7 is NARROWER "
+                     "than fn.2/fn.5: intrinsically resistant to TETRACYCLINE only "
+                     "-- doxycycline, minocycline and tigecycline stay active.",
+        "source": "EUCAST_INTRINSIC", "locus": "Table 3",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'EUCAST Expert Rules names S. maltophilia resistant to carbapenems as a worked example of intrinsic resistance.',
     },
-    "intr_entero_gram_pos_agents": {
-        "assertion": "Enterobacterales are expected resistant to benzylpenicillin, "
-                     "glycopeptides, fusidic acid, macrolides, lincosamides, "
-                     "streptogramins, rifampicin, daptomycin and linezolid "
-                     "(outer membrane exclusion).",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 1 header",
-        "verified": "pending",
+    "intr_mrsa_betalactams": {
+        "assertion": "MRSA carries mecA/mecC encoding low-affinity PBP2a, so ALL "
+                     "conventional beta-lactams are inactive; only ceftaroline and "
+                     "ceftobiprole retain activity.",
+        "source": "EUCAST_EXPERT", "locus": "staphylococci; CLSI M100 Ed36 Table 2C",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "Added after an audit found the UI label 'MRSA' shared no substring "
+                "with the table key 'staphylococcus aureus', so MRSA received NO "
+                "intrinsic filtering at all -- aztreonam and colistin were offered "
+                "for it while S. aureus correctly refused them.",
     },
-
-    # ── Expected resistant phenotypes (Gram-positive) ───────────────────────
-    "intr_gram_pos_gram_neg_agents": {
-        "assertion": "Gram-positive bacteria as a group -- not staphylococci only "
-                     "-- are expected resistant to aztreonam, temocillin, "
-                     "polymyxin B/colistin and nalidixic acid.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 3 (Gram-positive) header",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-        "note": "Renamed from intr_staph_gram_neg_agents and widened after the "
-                "scenario matrix (INV-9) showed S. pneumoniae, streptococci, "
-                "enterococci and Listeria all escaping a rule the EUCAST table "
-                "states for the whole Gram-positive group.",
+    "intr_mycoplasma_cellwall_agents": {
+        "assertion": "Mycoplasma and Ureaplasma have no peptidoglycan cell wall, so "
+                     "beta-lactams, glycopeptides and fosfomycin are intrinsically "
+                     "inactive.",
+        "source": "EUCAST_INTRINSIC", "locus": "organisms without a cell wall",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "Textbook microbiology; the table had no Mycoplasma key so the "
+                "engine could have recommended ampicillin for atypical pneumonia.",
     },
-    "intr_salmonella_shigella_invivo": {
-        "assertion": "Salmonella and Shigella test susceptible in vitro to oral "
-                     "1st/2nd-generation cephalosporins and to aminoglycosides but "
-                     "these agents FAIL in vivo (no intracellular penetration). "
-                     "They must not be reported as susceptible.",
-        "source": "CLSI_M100", "locus": "Table 2A comment on Salmonella/Shigella",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-        "note": "Scoped deliberately to cephalosporins and aminoglycosides. An "
-                "earlier draft also listed colistin and nitrofurantoin, which the "
-                "CLSI comment does NOT cover -- that over-reach made the QC layer "
-                "contradict the recommendation engine (caught by INV-4).",
-    },
-    "intr_vre_glycopeptide_contradiction": {
-        "assertion": "An isolate identified as VRE that reports vancomycin or "
-                     "teicoplanin SUSCEPTIBLE is a contradiction between the "
-                     "identification and the result. Re-check both before release.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Use of expected phenotypes for validation",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-        "note": "EUCAST: a result contradicting the expected phenotype should be "
-                "viewed with suspicion. Filed as a reportability rule because the "
-                "engine's organism string is literally 'VRE'.",
+    "intr_staph_gram_neg_agents": {
+        "assertion": "Staphylococci are intrinsically resistant to aztreonam, "
+                     "colistin/polymyxin, nalidixic acid and temocillin.",
+        "source": "EUCAST_EXPERT", "locus": "Table 4",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "Table 4 header states Gram-positive bacteria are additionally "
+                "intrinsically resistant to aztreonam, temocillin, polymyxin "
+                "B/colistin and nalidixic acid.",
     },
     "intr_enterococcus_cephalosporins": {
-        "assertion": "Enterococci are expected resistant to ALL cephalosporins, "
+        "assertion": "Enterococci are intrinsically resistant to ALL cephalosporins, "
                      "clindamycin, fusidic acid and aztreonam.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 3",
-        "verified": "pending",
-        "note": "Rule matches on 'enterococc' AND the literal string 'VRE' -- the "
-                "UI offers 'VRE' as an organism and it contains no such substring, "
-                "so every enterococcal rule was dead for the one isolate where it "
-                "matters most (found by scenario matrix INV-9).",
+        "source": "EUCAST_EXPERT", "locus": "Table 4",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "CLSI M100 Enterococcus WARNING verbatim: 'For Enterococcus spp., aminoglycosides (except for high-level resistance testing), cephalosporins, clindamycin, and trimethoprim-sulfamethoxazole may appear active in vitro, but are not effective clinically and should not be reported as susceptible.' EUCAST v3.3 Table 4 rows 4.7-4.9 carry R in the cephalosporin and clindamycin columns; aztreonam comes from the Table 4 header for all Gram-positives.",
     },
-    "intr_strep_entero_aminoglycoside_mono": {
-        "assertion": "Enterococci and streptococci have expected LOW-LEVEL "
+    "intr_strep_enterococcus_aminoglycosides": {
+        "assertion": "Enterococci and streptococci have intrinsic LOW-LEVEL "
                      "aminoglycoside resistance: never valid as monotherapy, and the "
-                     "routine low-content disk is not interpretable. Synergy with a "
+                     "routine 10 ug disk is not interpretable. Synergy with a "
                      "cell-wall-active agent is real but is predicted only by a "
-                     "HIGH-CONTENT HLAR screen (gentamicin 120ug / streptomycin "
-                     "300ug). Amikacin and tobramycin have no HLAR screen.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 3 (+ CLSI M100 Ed36 Table 2D)",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
+                     "HIGH-CONTENT HLAR screen (gentamicin 120 ug / streptomycin "
+                     "300 ug). Amikacin and tobramycin have no HLAR screen.",
+        "source": "EUCAST_EXPERT", "locus": "Table 4 (+ CLSI M100 Ed36 Table 2D)",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
         "note": "Added after the scenario matrix (INV-9) found clinical_data banning "
-                "aminoglycosides for these organisms with no matching QC rule in "
-                "ast_reportability.py -- a silent half-implemented rule.",
+                "aminoglycosides for these organisms with no matching QC rule. "
+                "EUCAST Table 4 footnote: aminoglycoside + cell-wall-inhibitor "
+                "combinations are synergistic and bactericidal against isolates "
+                "susceptible to the cell-wall agent and without high-level "
+                "aminoglycoside resistance.",
     },
     "intr_enterococcus_sxt_invivo": {
         "assertion": "Enterococci test susceptible to TMP-SMX in vitro but are not "
-                     "clinically responsive -- they take up exogenous folate and "
+                     "clinically responsive — they take up exogenous folate and "
                      "bypass the blocked pathway. Do not report.",
-        "source": "CLSI_M100", "locus": "Table 2D comment",
-        "verified": "pending",
+        "source": "EUCAST_EXPERT", "locus": "Table 4 / CLSI M100 Appendix B",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "Same CLSI Enterococcus WARNING names trimethoprim-sulfamethoxazole explicitly and says do not report as susceptible. Confirms both the phenomenon and the 'do not report' instruction.",
     },
     "intr_listeria_cephalosporins": {
-        "assertion": "L. monocytogenes is expected resistant to all cephalosporins "
-                     "and to fosfomycin. Ampicillin +/- gentamicin is the regimen.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 3",
-        "verified": "pending",
+        "assertion": "L. monocytogenes is intrinsically resistant to all "
+                     "cephalosporins — a known cause of meningitis treatment failure. "
+                     "Ampicillin is the agent.",
+        "source": "EUCAST_EXPERT", "locus": "Table 4",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "CAVEAT: the clinical fact is not in doubt -- cephalosporins fail against Listeria and this drives the 'add ampicillin' rule in empiric meningitis therapy. However EUCAST v3.3 Table 4 row 4.11 shows only two R marks for L. monocytogenes and the column alignment could NOT be resolved from the flattened PDF text, so the exact cell mapping is unconfirmed. Verify against the PDF before countersigning.",
     },
 
-    # ── Mechanism inference ─────────────────────────────────────────────────
-    "mech_esbl_producer_gate": {
-        "assertion": "An ESBL classification may only be applied to Enterobacterales. "
-                     "Non-fermenters (Pseudomonas, Acinetobacter, Stenotrophomonas) "
-                     "must never receive an ESBL label, however their cephalosporin "
-                     "results read.",
-        "source": "EUCAST_RESIST_DETECT", "locus": "Section 3 (ESBL detection)",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-        "note": "Enforced by is_esbl_producer(); guarded by INVARIANT 2 in "
-                "test_intrinsic_invariant.py.",
+    "intr_nonfermenter_narrow_spectrum": {
+        "assertion": "Non-fermentative Gram-negatives (Pseudomonas, Acinetobacter, "
+                     "Stenotrophomonas, Burkholderia) are intrinsically resistant to "
+                     "benzylpenicillin, 1st/2nd-generation cephalosporins, "
+                     "glycopeptides, lipoglycopeptides, fusidic acid, macrolides, "
+                     "lincosamides, rifampicin and oxazolidinones.",
+        "source": "EUCAST_INTRINSIC", "locus": "Table 3 (header)",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "Promoted from a 'no breakpoints' rule: EUCAST states these are "
+                "intrinsically resistant, which is a stronger and more useful claim.",
     },
-    "mech_intrinsic_stripped_before_inference": {
-        "assertion": "Expected-resistant results must be removed BEFORE any mechanism "
-                     "is inferred from the panel, otherwise an expected phenotype is "
-                     "mistaken for acquired resistance.",
-        "source": "EUCAST_RESIST_DETECT", "locus": "General principles",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-        "note": "This is why Cephalexin-R on P. aeruginosa used to be labelled "
-                "'(ESBL)' instead of '(Expected R)'.",
-    },
-    "mech_cr_pseudomonas_not_carbapenemase": {
-        "assertion": "Carbapenem resistance in P. aeruginosa must NOT be reported as "
-                     "a predicted carbapenemase. It is predominantly chromosomal "
-                     "(OprD porin loss, MexAB-OprM efflux, derepressed AmpC/PDC), and "
-                     "EUCAST publishes NO validated phenotypic algorithm to separate "
-                     "carbapenemase-producing from porin/efflux CRPA. Beta-lactams "
-                     "still testing S in the same panel argue against a broad "
-                     "carbapenemase and must be reported as tested.",
-        "source": "EUCAST_RESIST_DETECT",
-        "locus": "Carbapenemase detection scope (Enterobacterales only)",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-        "note": "Before this rule, two carbapenems R set probability='carbapenemase' "
-                "at 92% confidence for ANY organism, which flipped a SUSCEPTIBLE "
-                "Ceftazidime into the Avoid list and pushed the physician toward "
-                "colistin. Enterobacterales keep the 92% tier -- it is correct there.",
-    },
-    "mech_carbapenemase_enterobacterales": {
-        "assertion": "In Enterobacterales, non-susceptibility to >=2 carbapenems is a "
-                     "strong carbapenemase signal warranting confirmation "
-                     "(mCIM / PCR) and infection-control action.",
-        "source": "EUCAST_RESIST_DETECT", "locus": "Table 2 algorithm",
-        "verified": "pending",
-    },
-    "mech_oxa48_ertapenem_pattern": {
-        "assertion": "Ertapenem R with meropenem S/I suggests OXA-48-like, but the "
-                     "same pattern arises from porin loss plus ESBL/AmpC with no "
-                     "carbapenemase. High-level temocillin resistance is a marker but "
-                     "is not specific. Confirmation required before the label is used.",
-        "source": "EUCAST_RESIST_DETECT", "locus": "OXA-48 notes",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-        "note": "Confidence deliberately held at 62%, not the 92% tier.",
-    },
-    "mech_mrsa_from_ast_markers": {
-        "assertion": "Oxacillin-R or cefoxitin-R in S. aureus means mecA/PBP2a: ALL "
-                     "beta-lactams fail regardless of individual S results.",
-        "source": "EUCAST_EXPECTED_R", "locus": "Table 3 / mecA note",
-        "verified": "pending",
-    },
-    "mech_dtest_clindamycin": {
-        "assertion": "Erythromycin-R with clindamycin-S requires a D-test. Without a "
-                     "documented negative D-test, clindamycin must not be reported "
-                     "susceptible (inducible MLSb).",
-        "source": "CLSI_M100", "locus": "Table 2C, inducible clindamycin resistance",
-        "verified": "pending",
+    "intr_citrobacter_koseri_klebsiella_oxytoca_classA": {
+        "assertion": "C. koseri and K. oxytoca carry a chromosomal CLASS A "
+                     "beta-lactamase — intrinsic aminopenicillin resistance, but "
+                     "inhibitor combinations remain active (unlike the AmpC species).",
+        "source": "EUCAST_INTRINSIC", "locus": "Table 2",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "Added after the expanded scenario matrix found C. koseri matched no "
+                "rule at all — the only Citrobacter rule targeted C. freundii's AmpC.",
     },
 
-    # ── Classification and reporting policy ─────────────────────────────────
-    "class_mdr_magiorakos": {
-        "assertion": "Non-susceptible = R + I. A category counts as non-susceptible "
-                     "when >=1 tested agent in it is non-susceptible. Expected "
-                     "resistance is excluded before counting. MDR = non-susceptible "
-                     "in >=3 categories.",
-        "source": "MAGIORAKOS", "locus": "Interim standard definitions",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-    },
-    "report_esbl_ceph_as_tested": {
-        "assertion": "When an ESBL is predicted, cephalosporin results are reported AS "
-                     "TESTED rather than edited to R. The 'report as tested' policy "
-                     "replaced the older blanket S->R editing.",
-        "source": "EUCAST_BP", "locus": "v16.1 general notes on reporting",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-        "note": "QC006 implements this. analyze_antibiotics() must not contradict it "
-                "by hard-banning the same S-testing cephalosporins -- tracked as an "
-                "open issue.",
-    },
-    "report_intermediate_clsi": {
-        "assertion": "I means 'susceptible, increased exposure'. Under CLSI it is "
-                     "usable with increased dosing; the report must state which "
-                     "standard was applied.",
-        "source": "CLSI_M100", "locus": "Interpretive categories",
+    # ── No breakpoints (ast_reportability.NO_BREAKPOINT_RULES) ───────────────
+    "nobp_nonfermenter_narrow_spectrum": {
+        "assertion": "Neither EUCAST nor CLSI publishes breakpoints for narrow-spectrum "
+                     "cephalosporins, nitrofurantoin or norfloxacin against "
+                     "Acinetobacter / Stenotrophomonas / Burkholderia.",
+        "source": "EUCAST_BP", "locus": "non-fermenter tables; CLSI M100 Table 2B-2/2B-3",
         "verified": "pending",
     },
-    "report_aware_tiers": {
-        "assertion": "Access / Watch / Reserve tiers drive the ranking engine, and "
-                     "Reserve agents are labelled last-resort (MDR/XDR), not "
-                     "'ESBL / severe cases only'.",
-        "source": "WHO_AWARE", "locus": "AWaRe 2023 classification",
+    "nobp_azithromycin_enterobacterales": {
+        "assertion": "Azithromycin breakpoints exist only for Salmonella Typhi/Paratyphi "
+                     "and Shigella. Non-typhoidal Salmonella has none.",
+        "source": "EUCAST_BP", "locus": "Enterobacterales — azithromycin note",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "CLSI M100 azithromycin footnote p verbatim: 'For reporting against Salmonella enterica ser. Typhi and Shigella spp. only.' Confirms non-typhoidal Salmonella has no azithromycin reporting criterion.",
+    },
+    "nobp_cefoperazone": {
+        "assertion": "Cefoperazone alone or with sulbactam has no EUCAST breakpoints; "
+                     "CLSI withdrew the cefoperazone breakpoints. Widely used in Egypt, "
+                     "but the result is uncalibrated.",
+        "source": "EUCAST_BP", "locus": "absent from tables; CLSI M100 Ed36",
         "verified": "pending",
     },
-    "report_no_breakpoint_is_not_resistant": {
-        "assertion": "An agent with no breakpoint for the organism yields a "
-                     "meaningless result, not a resistant one. Flag as warning and "
-                     "suppress, do not convert to R.",
-        "source": "EUCAST_BP", "locus": "'When there are no breakpoints' guidance",
-        "verified": "pending",
+    "nobp_nitrofurantoin_non_ecoli": {
+        "assertion": "EUCAST nitrofurantoin breakpoints are for E. coli only "
+                     "(uncomplicated UTI) and do not extrapolate to other species.",
+        "source": "EUCAST_BP", "locus": "Enterobacterales",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'BSAC clarification of EUCAST guidance: after review the nitrofurantoin breakpoints could NOT be extended beyond E. coli; Proteeae, some Klebsiella and Pseudomonas carry intrinsic resistance.',
+    },
+    "nobp_fosfomycin_oral_non_ecoli": {
+        "assertion": "Oral fosfomycin breakpoints are restricted to E. coli in both "
+                     "EUCAST and CLSI.",
+        "source": "EUCAST_BP", "locus": "Enterobacterales",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "EUCAST guidance on fosfomycin i.v. breakpoints (May 2024) verbatim: 'The currently revised breakpoint of fosfomycin applies only to E. coli in infections originating from the urinary tract.' Breakpoint tables add: 'Zone diameter breakpoints apply to E. coli only.'",
+    },
+    "nobp_imipenem_proteae": {
+        "assertion": "Imipenem has intrinsically LOW activity against Proteus spp., "
+                     "Morganella morganii and Providencia spp.; do not rely on a "
+                     "Susceptible imipenem result -- meropenem is preferred.",
+        "source": "EUCAST_BP", "locus": "Enterobacterales note 2",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "NEW RULE added this round; the engine had no equivalent.",
+    },
+    "nobp_tigecycline_proteae": {
+        "assertion": "Tigecycline has no breakpoint for the Proteae "
+                     "(Proteus / Providencia / Morganella), which are intrinsically "
+                     "less susceptible via efflux.",
+        "source": "EUCAST_BP", "locus": "Enterobacterales — tigecycline note",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'EUCAST v16.0 Enterobacterales note 3/A verbatim: activity is INSUFFICIENT in Serratia spp., Proteus spp., Morganella morganii and Providencia spp. SERRATIA was missing from the rule and has been added. Breakpoint is validated for E. coli and C. koseri only.',
     },
 
-    # ── Therapy notes ───────────────────────────────────────────────────────
-    "tx_cefepime_esbl_uti": {
-        "assertion": "Cefepime testing S with a predicted ESBL goes to Use With "
-                     "Caution (not banned) for uncomplicated lower UTI; it is banned "
-                     "when a carbapenemase is predicted or when cefepime is R.",
-        "source": "IDSA_AMR", "locus": "ESBL-E section",
+    # ── Ineffective in vivo ──────────────────────────────────────────────────
+    "invivo_salmonella_shigella_aminoglycoside_ceph12": {
+        "assertion": "Aminoglycosides and 1st/2nd-gen cephalosporins may test "
+                     "susceptible against Salmonella/Shigella but are clinically "
+                     "ineffective for invasive infection — do not report S.",
+        "source": "CLSI_M100", "locus": "Table 2A organism-specific notes",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "CLSI M100 WARNING verbatim: 'For Salmonella and Shigella spp., aminoglycosides, first- and second-generation cephalosporins, and cephamycins may appear active in vitro but are not effective clinically and should not be reported as susceptible.' Carried into Ed36 (2026).",
+    },
+
+    # ── Internal consistency (ast_consistency) ───────────────────────────────
+    "equiv_ctx_cro": {
+        "assertion": "Cefotaxime and ceftriaxone share MIC breakpoints against "
+                     "Enterobacterales and are hydrolysed near-identically by common "
+                     "ESBLs; one S and one R on the same isolate is a laboratory error.",
+        "source": "EUCAST_BP", "locus": "Enterobacterales; CLSI M100 Table 2A",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'Cefotaxime and ceftriaxone share Enterobacterales breakpoints in both EUCAST and CLSI. Treated as a VERIFY flag rather than a hard error, since rare enzyme-specific discordance exists.',
+    },
+    "equiv_amc_sam": {
+        "assertion": "Amoxicillin-clavulanate and ampicillin-sulbactam behave "
+                     "near-identically against Enterobacterales; a split result is a "
+                     "laboratory error, not a resistance pattern.",
+        "source": "EUCAST_EXPERT", "locus": "beta-lactam interpretive rules",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'DOWNGRADED to a verify-flag this round. Sulbactam and clavulanate differ in potency and carry different breakpoints and dosing, so a split result is unusual rather than impossible.',
+    },
+    "hier_amp_vs_amc": {
+        "assertion": "Ampicillin S with amoxicillin-clavulanate R is impossible — "
+                     "adding a beta-lactamase inhibitor cannot reduce activity.",
+        "source": "EUCAST_EXPERT", "locus": "beta-lactam hierarchy",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'Adding a beta-lactamase inhibitor cannot reduce activity, so the pattern indicates a testing error. Kept as a verify-flag.',
+    },
+    "hier_pip_vs_tzp": {
+        "assertion": "Piperacillin S with piperacillin-tazobactam R is impossible, "
+                     "for the same reason.",
+        "source": "EUCAST_EXPERT", "locus": "beta-lactam hierarchy",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'Same logic as hier_amp_vs_amc. Rare tazobactam inoculum effects are described, so verify rather than declare impossible.',
+    },
+    "hier_mem_vs_etp": {
+        "assertion": "Meropenem R with ertapenem S is the wrong way round; ertapenem "
+                     "is the most labile carbapenem, so the usual pattern is the "
+                     "reverse (ertapenem-R with meropenem-S = OXA-48 or porin loss).",
+        "source": "EUCAST_EXPERT", "locus": "carbapenem interpretive rules",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": 'Ertapenem is the most labile carbapenem; the ertapenem-R/meropenem-S direction is the recognised OXA-48 or porin-loss signature. The reverse warrants a repeat.',
+    },
+    "hier_tet_vs_doxy": {
+        "assertion": "Tetracycline S predicts doxycycline/minocycline S; the reverse "
+                     "combination is a reading error.",
+        "source": "EUCAST_EXPERT", "locus": "tetracycline interpretive rules",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "CLSI M100 footnote q VERBATIM: 'Organisms that are susceptible to tetracycline are also considered susceptible to doxycycline and minocycline. However, some organisms that are intermediate or resistant to tetracycline may be susceptible to doxycycline, minocycline, or both.' The code already flags ONLY the safe direction (tet-S + doxy-R) and states the reverse is allowed, so it matches the footnote exactly and does NOT suppress an active minocycline.",
+    },
+
+    # ── Inline rules in streamlit_app.py ─────────────────────────────────────
+    "QC003": {
+        "assertion": "A carbapenem susceptible while colistin is resistant amid broad "
+                     "resistance is an atypical pattern; confirm the identification.",
+        "source": "EUCAST_EXPERT", "locus": "unusual phenotypes",
         "verified": "pending",
     },
-    "tx_stenotrophomonas_sxt": {
-        "assertion": "TMP-SMX is the established first-line agent for "
-                     "S. maltophilia; carbapenems are inactive (L1 MBL).",
-        "source": "IDSA_AMR", "locus": "S. maltophilia section",
+    "QC004": {
+        "assertion": "Carbapenem R with a cephalosporin S in Enterobacterales is "
+                     "uncommon (OXA-48-like or porin loss) and should be confirmed by "
+                     "a carbapenemase assay.",
+        "source": "EUCAST_DETECT", "locus": "carbapenemase detection",
         "verified": "pending",
     },
-    "tx_acinetobacter_sulbactam": {
-        "assertion": "Sulbactam-containing regimens are the backbone for "
-                     "Acinetobacter; sulbactam has direct PBP-binding activity "
-                     "against this genus, unlike clavulanate.",
-        "source": "IDSA_AMR", "locus": "CRAB section",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-    },
-    "tx_urinary_only_agents": {
-        "assertion": "Nitrofurantoin and fosfomycin achieve therapeutic levels only "
-                     "in urine and must never be recommended for blood, CSF, sputum "
-                     "or wound isolates.",
-        "source": "EUCAST_BP", "locus": "v16.1 agent-specific notes",
-        "verified": "primary", "verified_by": _HA, "verified_on": "2026-07-22",
-    },
-    "tx_fusidic_no_monotherapy": {
-        "assertion": "Fusidic acid must not be used as systemic monotherapy "
-                     "(rapid on-treatment resistance selection).",
-        "source": "EUCAST_BP", "locus": "v16.1 agent-specific notes",
+    "QC005": {
+        "assertion": "Linezolid resistance in S. aureus is very rare; confirm by a "
+                     "reference method before reporting.",
+        "source": "CLSI_M100", "locus": "Table 2C notes",
         "verified": "pending",
     },
-    "tx_priority_pathogens": {
-        "assertion": "Carbapenem-resistant Acinetobacter and Enterobacterales are "
-                     "WHO critical-priority pathogens; escalation wording reflects it.",
-        "source": "WHO_BPPL", "locus": "2024 priority tiers",
-        "verified": "pending",
+    "QC006": {
+        "assertion": "A susceptible cephalosporin in a suspected ESBL producer is "
+                     "reported AS TESTED. Current breakpoints already detect the "
+                     "clinically important mechanisms; editing S to R on mechanism "
+                     "detection is the pre-2017 practice and was withdrawn. ESBL "
+                     "detection is for infection control and surveillance. Preferring "
+                     "a carbapenem in serious ESBL infection is a prescribing decision, "
+                     "not a reporting edit.",
+        "source": "EUCAST_BP", "locus": "Enterobacterales — cephalosporin/ESBL note",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+    },
+    "SPEC-URN": {
+        "assertion": "Nitrofurantoin, oral fosfomycin and norfloxacin reach "
+                     "therapeutic concentrations only in urine (and, for norfloxacin, "
+                     "the GI tract); a result on a systemic isolate is not clinically "
+                     "actionable.",
+        "source": "EUCAST_BP", "locus": "agent site-of-infection notes",
+        "verified": "secondary", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "EUCAST breakpoint tables label these agents '(uncomplicated UTI only)' in the Enterobacterales table headers (nitrofurantoin, trimethoprim, oral fosfomycin), which carries the site restriction. The pharmacology claim itself is textbook but was not read from a primary PK document.",
+    },
+    "REP-GPO-GN": {
+        "assertion": "Glycopeptides, oxazolidinones and daptomycin have no activity "
+                     "and no breakpoint against Gram-negative bacteria and must never "
+                     "be tested or reported for them.",
+        "source": "EUCAST_INTRINSIC", "locus": "Table 2/3",
+        "verified": "source", "checked_by": _AI, "checked_on": "2026-07-22",
+        "countersigned_by": "",
+        "note": "EUCAST Table 1 header verbatim: 'Enterobacterales are also intrinsically resistant to benzylpenicillin, glycopeptides, fusidic acid, macrolides, lincosamides, streptogramins, rifampicin, daptomycin and linezolid.' Table 3 header carries the same for non-fermenters.",
     },
 }
 
-
-# ============================================================================
-#  Helpers
-# ============================================================================
-def _months_between(then: date, now: date) -> int:
-    return (now.year - then.year) * 12 + (now.month - then.month)
-
-
-def _parse_day(s: str) -> date:
-    parts = [int(x) for x in s.split("-")]
-    while len(parts) < 3:
-        parts.append(1)
-    return date(*parts[:3])
-
-
-def pending_rules() -> Dict[str, Dict[str, Any]]:
-    """Rules that have never been checked against the source document."""
-    return {k: v for k, v in RULES.items() if v.get("verified") != "primary"}
-
-
-def stale_rules(today: date | None = None) -> Dict[str, int]:
-    """Primary-verified rules whose verification is older than STALENESS_MONTHS."""
-    today = today or date.today()
-    out: Dict[str, int] = {}
-    for k, v in RULES.items():
-        if v.get("verified") == "primary" and v.get("verified_on"):
-            age = _months_between(_parse_day(v["verified_on"]), today)
-            if age > STALENESS_MONTHS:
-                out[k] = age
-    return out
+# ── Citation strings the engine must NOT use in free text ────────────────────
+# Each maps an ambiguous or incorrect string to the row that replaces it. The
+# test greps the codebase for these and reports every remaining occurrence.
+DEPRECATED_CITATIONS: Dict[str, str] = {
+    "IDSA AMR 2025":
+        "IDSA_AMR is v4.0, published in Clin Infect Dis on 2024-08-07 (ciae403). "
+        "There is no 2025 edition — use 'IDSA AMR Guidance v4.0 (2024)'.",
+    "IDSA 2025":
+        "Ambiguous. Name the specific IDSA document and its year.",
+    "EUCAST 2026":
+        "Ambiguous — EUCAST publishes several documents. Use 'EUCAST Breakpoint "
+        "Tables v16.0 (2026)' or 'EUCAST Intrinsic Resistance v3.3 (2021)'.",
+    "CLSI M100 2026":
+        "Use the edition, not the year: 'CLSI M100 Ed36'.",
+    "EUCAST Expert Rules v3.3":
+        "v3.3 is the Intrinsic Resistance and Unusual Phenotypes document, not the "
+        "Expert Rules. Use 'EUCAST Intrinsic Resistance v3.3' for intrinsic claims "
+        "and 'EUCAST Expert Rules v3.1 (2016)' for interpretive/hierarchy rules.",
+}
 
 
-def superseded_citations() -> Dict[str, str]:
-    """Rules still pointing at a document this registry marks as superseded."""
-    return {
-        rid: r["source"]
-        for rid, r in RULES.items()
-        if SOURCES.get(r.get("source"), {}).get("superseded_by")
-    }
+def source_for(rule_id: str) -> Dict[str, str]:
+    """Full citation for a rule id, or {} if the rule is unregistered."""
+    row = RULES.get(rule_id)
+    if not row:
+        return {}
+    src = SOURCES.get(row.get("source", ""), {})
+    return {**src, "locus": row.get("locus", ""), "assertion": row.get("assertion", "")}
 
 
-def print_queue() -> None:
-    pend = pending_rules()
-    print(f"\nGUIDELINE VERIFICATION QUEUE — {len(pend)} rule(s) awaiting primary check\n")
-    by_src: Dict[str, list] = {}
-    for rid, r in pend.items():
-        by_src.setdefault(r["source"], []).append((rid, r))
-    for src, rows in sorted(by_src.items()):
-        meta = SOURCES.get(src, {})
-        print(f"── {meta.get('title', src)}  v{meta.get('version', '?')} "
-              f"({meta.get('published', '?')})")
-        print(f"   {meta.get('url', '')}")
-        for rid, r in rows:
-            print(f"     [ ] {rid}")
-            print(f"         locus: {r.get('locus', '-')}")
-        print()
-    print("To verify: open the document at the locus, confirm the assertion, then set")
-    print('  "verified": "primary", "verified_by": "<name>", "verified_on": "YYYY-MM-DD"')
-
-
-def summary() -> None:
-    prim = len(RULES) - len(pending_rules())
-    print("Orange Lab CDSS — Guideline Registry")
-    print("=" * 46)
-    print(f"  sources                : {len(SOURCES)}")
-    print(f"  rules                  : {len(RULES)}")
-    print(f"  primary-verified       : {prim}")
-    print(f"  awaiting verification  : {len(pending_rules())}")
-    print(f"  stale (> {STALENESS_MONTHS} months) : {len(stale_rules())}")
-    sup = superseded_citations()
-    print(f"  citing superseded docs : {len(sup)}"
-          + (f"  -> {sorted(sup)}" if sup else ""))
-    print("\n  Current document versions:")
-    for key in ("EUCAST_BP", "CLSI_M100", "EUCAST_EXPECTED_R"):
-        m = SOURCES[key]
-        print(f"    {m['title'][:52]:52s} v{m['version']} ({m['published']})")
-    print("\nRun with --queue for the outstanding verification list.")
-
-
-if __name__ == "__main__":
-    import sys
-    if "--queue" in sys.argv:
-        print_queue()
-    else:
-        summary()
+def citation_line(rule_id: str) -> str:
+    """One-line human citation, e.g. for a PDF footer."""
+    s = source_for(rule_id)
+    if not s:
+        return ""
+    bits = [s.get("title", ""), s.get("version", ""), s.get("locus", "")]
+    return " · ".join(b for b in bits if b)

@@ -34,20 +34,15 @@ ABX_GUIDELINES = {
     },
     "Ampicillin/Sulbactam": {
         "priority": 2, "class": "Penicillin + Beta-lactamase Inhibitor (IV)",
-        "note": "💉 IV فقط. فعال للموجبات والسالبات. أساس علاج Acinetobacter بجرعات عالية (IDSA AMR 2025).",
+        "note": "💉 IV فقط. فعال للموجبات والسالبات. أساس علاج Acinetobacter بجرعات عالية (IDSA AMR Guidance v4.0 (2024)).",
         "renal_limit": 30, "renal_note": "⚖️ تعديل الجرعة مطلوب.",
         "hepatic_caution": False, "aware": "Watch", "high_po": False,
         "preg_status": "Safe", "preg_note": "",
         "child_safe": True, "interacts_with": [],
         "aliases": ["unictam","sigmaclav","unasyn",
-                    # Reversed / hyphenated spellings printed by some
-                    # analysers. Without these the span-claiming scanner
-                    # found no combination alias on the line and fell
-                    # through to the bare "Ampicillin" entry, attributing
-                    # the result to the wrong drug -- and, for
-                    # Acinetobacter, raising a false intrinsic-resistance
-                    # alert (bare ampicillin IS intrinsic, amp-sulbactam
-                    # is not).
+                    # Reversed / hyphenated spellings seen on printed AST
+                    # sheets: without these the scanner fell through to the
+                    # bare "Ampicillin" entry and mis-attributed the result.
                     "sulbactam ampicillin","sulbactam/ampicillin",
                     "ampicillin-sulbactam","ampicillin sulbactam",
                     "amp-sulbactam","ampi-sulbactam"],
@@ -62,7 +57,7 @@ ABX_GUIDELINES = {
     },
     "Piperacillin + Tazobactam": {
         "priority": 4, "class": "Anti-pseudomonal Penicillin + Inhibitor (IV)",
-        "note": "🛑 (مثل Tazocin) IV فقط. واسع الطيف جداً — يُحفظ للحالات الشديدة (IDSA AMR 2025).",
+        "note": "🛑 (مثل Tazocin) IV فقط. واسع الطيف جداً — يُحفظ للحالات الشديدة (IDSA AMR Guidance v4.0 (2024)).",
         "renal_limit": 20, "renal_note": "CrCl 20-40: 3.375g q6h. CrCl <20: 2.25g q6h. HD: 2.25g q8h + dose بعد dialysis. BNF 2025.",
         "hepatic_caution": False, "aware": "Watch", "high_po": False,
         "preg_status": "Safe", "preg_note": "",
@@ -631,6 +626,34 @@ ABX_GUIDELINES = {
             "Blood":      "✅ Rickettsia bacteremia.",
         },
     },
+    "Minocycline": {
+        "priority": 2, "class": "Tetracycline (Oral/IV)",
+        "note": (
+            "✅ التتراسيكلين الوحيد الفعّال ضد Acinetobacter و Serratia — "
+            "EUCAST تنص صراحةً أن مقاومتهما الجوهرية للتتراسيكلين والدوكسيسيكلين "
+            "لا تمتد للمينوسيكلين. خيار معتمد في IDSA v4.0 لـ "
+            "Stenotrophomonas و CRAB (يُفضّل مع دواء ثانٍ في العدوى الشديدة)."
+        ),
+        "renal_limit": 0, "renal_note": "🟢 آمن كلوياً نسبياً (إخراج كبدي أساساً).",
+        "hepatic_caution": True, "aware": "Watch", "high_po": True,
+        "preg_status": "Banned",
+        "preg_note": (
+            "⛔ ممنوع في الحمل — Minocycline (Tetracycline class):\n"
+            "  يترسّب في عظام وأسنان الجنين → تصبغ دائم وتثبيط نمو العظام.\n"
+            "  محظور خاصة بعد الأسبوع 15 (2nd و3rd trimester).\n"
+            "  البديل: Amoxicillin-Clavulanate أو Cephalosporin أو Azithromycin."
+        ),
+        "child_safe": False,
+        "child_note": "ممنوع <8 سنوات (teeth/bone). >8 سنوات عند الضرورة فقط.",
+        "interacts_with": ["Antacids (مضادات الحموضة)"],
+        "aliases": ["minocin", "mino", "minocyclin"],
+        "organisms": ["Acinetobacter baumannii", "Stenotrophomonas maltophilia",
+                      "Serratia marcescens", "Staphylococcus aureus"],
+        "specimen_notes": {
+            "Sputum":     "✅ خيار في CRAB و S. maltophilia (مع دواء ثانٍ).",
+            "Wound Swab": "✅ MRSA SSTI و Acinetobacter.",
+        },
+    },
     # ── Carbapenems ────────────────────────────────────────────────────
     "Imipenem/Cilastatin": {
         "priority": 5, "class": "Carbapenem (IV)",
@@ -1159,7 +1182,7 @@ _EXTRA_ENTRIES_3 = {
         "note": (
             "💊 (مثل Dalacin C) Oral وIV. Bioavailability فموي ~87%. "
             "🔴 D-TEST CRITICAL: إذا Erythromycin=R + Clindamycin=S → "
-            "يجب D-test لاستبعاد MLSB inducible resistance (CLSI M100 2026). "
+            "يجب D-test لاستبعاد MLSB inducible resistance (CLSI M100 Ed36). "
             "لا تُستخدم Clindamycin إلا بعد تأكيد D-test سالب. "
             "✅ تغطية ممتازة لـ MSSA وStrep والأنيروبيك."
         ),

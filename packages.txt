@@ -1,14 +1,12 @@
 tesseract-ocr
 tesseract-ocr-ara
 tesseract-ocr-eng
-tesseract-ocr-osd
 libpango-1.0-0
 libpangocairo-1.0-0
 libpangoft2-1.0-0
 libffi-dev
 libcairo2
 libgdk-pixbuf-2.0-0
-libheif1
 fonts-noto-core
 fonts-hosny-amiri
 fonts-dejavu-core

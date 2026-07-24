@@ -84,6 +84,21 @@ def _find(sir_map: Dict[str, str], needle: str,
     return None
 
 
+def _find_tokens(sir_map: Dict[str, str], tokens: List[str]) -> Optional[str]:
+    """First panel entry whose normalized name contains ALL tokens.
+
+    Needed to name a specific inhibitor combination unambiguously: "sulbactam"
+    alone matches both ampicillin-sulbactam and cefoperazone-sulbactam, so the
+    ampicillin combo can only be pinned down by requiring both tokens.
+    """
+    toks = [_nk(t) for t in tokens]
+    for drug in sir_map:
+        d = _nk(drug)
+        if all(t in d for t in toks):
+            return drug
+    return None
+
+
 _INHIBITORS = ["clav", "sulbactam", "tazobactam", "avibactam", "vaborbactam",
                "relebactam"]
 
@@ -112,6 +127,29 @@ EQUIVALENCE_RULES: List[Dict[str, Any]] = [
                    "reading, colony purity. Do not report until resolved."),
         "reference": "EUCAST Breakpoint Tables v16.0 — Enterobacterales · CLSI M100 Ed36 Table 2A",
     },
+    {
+        "id": "equiv_amc_sam",
+        "organisms": ENTEROBACTERALES,
+        # Two-token match so "sulbactam" does not also grab cefoperazone-sulbactam.
+        "a_tokens": ["amoxicillin", "clav"],
+        "b_tokens": ["ampicillin", "sulbactam"],
+        "reason_ar": ("Amoxicillin/Clavulanate و Ampicillin/Sulbactam هما نفس "
+                      "الأمينوبنسلين مع مثبّط بيتا-لاكتاماز من نفس الفئة (A)، "
+                      "ويتصرّفان بشكل شبه متطابق ضد الـ Enterobacterales. أن يكون "
+                      "أحدهما S والآخر R على نفس العزلة خطأ معملي لا نمط مقاومة."),
+        "reason_en": (
+            "VERIFY (not a hard error): sulbactam and clavulanate differ in potency and carry different breakpoints and dosing, so a split result is unusual rather than impossible. "
+            "Amoxicillin-clavulanate and ampicillin-sulbactam are the same "
+                      "aminopenicillin plus an equivalent class-A beta-lactamase "
+                      "inhibitor; against Enterobacterales they behave "
+                      "near-identically. One S and one R on the same isolate is a "
+                      "laboratory error, not a resistance pattern."),
+        "fix_ar": ("أعِد اختبار التركيبتين من نفس اللقاح؛ تحقّق من صلاحية الأقراص "
+                   "وقراءة الـ zone قبل الإبلاغ."),
+        "fix_en": ("Repeat both combinations from the same inoculum; verify disk "
+                   "potency and zone reading before reporting."),
+        "reference": "EUCAST Expert Rules v3.1 (2016) · Breakpoint Tables v16.0 — Enterobacterales",
+    },
 ]
 
 
@@ -131,7 +169,7 @@ HIERARCHY_RULES: List[Dict[str, Any]] = [
                       "inhibitor cannot reduce activity."),
         "fix_ar": "أعِد اختبار القرصين. غالباً خطأ قراءة أو قرص تالف.",
         "fix_en": "Repeat both disks. Usually a reading error or a degraded disk.",
-        "reference": "EUCAST Expert Rules v3.3 — beta-lactam hierarchy",
+        "reference": "EUCAST Expert Rules v3.1 (2016) — beta-lactam hierarchy",
     },
     {
         "id": "hier_pip_vs_tzp",
@@ -145,7 +183,7 @@ HIERARCHY_RULES: List[Dict[str, Any]] = [
                       "activity."),
         "fix_ar": "أعِد اختبار القرصين.",
         "fix_en": "Repeat both disks.",
-        "reference": "EUCAST Expert Rules v3.3 — beta-lactam hierarchy",
+        "reference": "EUCAST Expert Rules v3.1 (2016) — beta-lactam hierarchy",
     },
     {
         "id": "hier_mem_vs_etp",
@@ -211,9 +249,13 @@ def check_consistency(organism: str, sir_map: Dict[str, str]) -> List[Dict[str, 
     for rule in EQUIVALENCE_RULES:
         if rule["organisms"] and not _org_in(organism, rule["organisms"]):
             continue
-        da = _find(sir_map, rule["a"], rule.get("a_exclude"))
-        db = _find(sir_map, rule["b"], rule.get("b_exclude"))
-        if not da or not db:
+        if "a_tokens" in rule:
+            da = _find_tokens(sir_map, rule["a_tokens"])
+            db = _find_tokens(sir_map, rule["b_tokens"])
+        else:
+            da = _find(sir_map, rule["a"], rule.get("a_exclude"))
+            db = _find(sir_map, rule["b"], rule.get("b_exclude"))
+        if not da or not db or da == db:
             continue
         va, vb = sir_map[da], sir_map[db]
         # S vs R only. S vs I is a one-step drift that ordinary technical
@@ -280,7 +322,7 @@ def format_issue(issue: Dict[str, Any], lang: str = "ar") -> Dict[str, str]:
 # cause becomes a second, invisible source of truth.
 QC_RULE_OVERRIDES: Dict[str, Dict[str, str]] = {
     # QC006 told the user to "avoid ALL cephalosporins even if S in the AST" and
-    # attributed that to EUCAST 2026. EUCAST says the opposite in the v16.0
+    # attributed that to EUCAST Breakpoint Tables v16.0. EUCAST says the opposite in the v16.0
     # tables: the Enterobacterales cephalosporin breakpoints detect the
     # clinically important mechanisms, isolates that produce a beta-lactamase but
     # test susceptible are REPORTED AS TESTED, and the presence or absence of an
