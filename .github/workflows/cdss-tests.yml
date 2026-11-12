@@ -5,7 +5,7 @@
 #   .github/workflows/cdss-tests.yml   (keep the folder path)
 #
 # WHAT IT DOES:
-#   On every push GitHub spins up a clean machine and runs SEVEN guards in
+#   On every push GitHub spins up a clean machine and runs the unit tests plus SEVEN guards in
 #   dependency order — cheapest and most fundamental first, so a red X points at
 #   the real cause instead of a downstream symptom. Green check = safe to deploy.
 #   Red X = a regression was caught BEFORE it reached Streamlit Cloud.
@@ -36,6 +36,18 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      - name: Install test runner
+        run: python -m pip install --quiet pytest
+
+      # ── UNIT TESTS ──────────────────────────────────────────────────────
+      # One test file per cdss/ module: every clinical rule on its own, then
+      # the engine-level properties (a drug lands in exactly one list, R is
+      # never offered, the outcome does not depend on rule order, adding a
+      # risk factor never makes a drug look safer). Runs first because it is
+      # the fastest and the most specific: a red X here names the rule.
+      - name: "Unit tests — cdss package"
+        run: python -m pytest -q tests
 
       # ── GUARD 0 ─────────────────────────────────────────────────────────
       # A missing clinical_data.py is the exact failure that shipped once: the
