@@ -1330,6 +1330,21 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:0.6mm 0; }
                 return ('⚠ Renal', '#b7770d')
             # 5. Organism-based (MRSA / ESBL / AmpC / Carbapenemase / intrinsic)
             if cat == "organism":
+                # The engine names the rule that decided each row; trust it over
+                # a guess from the class label (amoxicillin-clavulanate's label
+                # contains neither "penicillin" nor "cephalosporin").
+                _rule = bd.get("rule", "")
+                if _rule == "mrsa_beta_lactam":
+                    return ('⚠ MRSA — β-lactam', '#922b21')
+                if _rule == "carbapenemase_carbapenem":
+                    return ('⚠ Carbapenemase', '#922b21')
+                if _rule == "mechanism_beta_lactam":
+                    return (('⚠ Carbapenemase', '#922b21') if _is_carbapenemase
+                            else ('⚠ ESBL Concern', '#b7770d'))
+                if _rule == "enterococcus_tmpsmx":
+                    return ('⚠ Unreliable in vivo', '#922b21')
+                if _rule:
+                    return ('⚠ Intrinsic R', '#922b21')
                 _is_betalactam = any(k in _cls for k in
                                      ("penicillin", "cephalosporin", "carbapenem"))
                 # MRSA: detected + beta-lactam
@@ -1438,12 +1453,26 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:0.6mm 0; }
                 _rl = _wd.get("renal_limit","-")
                 _rn = _esc(_ar2en(_wd.get("renal_note",""), _EN))
                 _detail = f'{_T["renal_adj"]} {_rl} ml/min' + (f' — {_rn}' if _rn else '')
-            elif _wreason == "esbl_bli_uti_only":
-                _esbl_txt = (_wd.get("esbl_note_en") if _EN and _wd.get("esbl_note_en")
-                             else _wd.get("esbl_note","ESBL organism — BLI combo for uncomplicated UTI only"))
-                _detail = _esc(_ar2en(_esbl_txt, _EN))
             elif _wreason != "intermediate_culture":
-                _detail = _esc(_ar2en(_wd.get("renal_note","") or _wd.get("note",""), _EN))
+                # Every warning row carries a hand-written one-line form in both
+                # languages (warning_short / warning_short_en). The chip used to
+                # print the long note cut at 90 characters, which ended clinical
+                # cautions mid-sentence ("...effective ONLY for uncomplicate").
+                _own = _wd.get("warning_short_en") if _EN else _wd.get("warning_short")
+                if _own:
+                    _detail = _esc(_own)
+                elif _wreason == "esbl_bli_uti_only":
+                    _esbl_txt = (_wd.get("esbl_note_en") if _EN and _wd.get("esbl_note_en")
+                                 else _wd.get("esbl_note","ESBL organism — BLI combo for uncomplicated UTI only"))
+                    _detail = _esc(_ar2en(_esbl_txt, _EN))[:90]
+                else:
+                    _detail = _esc(_ar2en(_wd.get("renal_note","") or _wd.get("note",""), _EN))[:90]
+            if _wreason == "renal_adjustment":
+                _detail = _detail[:90]      # dosing table text; long by nature
+            for _also in _wd.get("also", []):
+                _a_txt = _also.get("text_en") if _EN else _also.get("text_ar")
+                if _a_txt:
+                    _detail += ("<br>+ " if _detail else "+ ") + _esc(_a_txt)
 
             H.append(
                 # flex:1 1 42mm → chips grow to fill each row evenly (fixes poor
@@ -1459,7 +1488,7 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:0.6mm 0; }
                 '<span style="padding:0.1mm 1.5mm;border-radius:1.5mm;font-size:6pt;flex:0 0 auto;'
                 f'font-weight:bold;white-space:nowrap;{_waw_style}">{_waw}</span>'
                 '</div>'
-                + (f'<div style="font-size:6.5pt;color:#555;margin-top:0.2mm;line-height:1.3;overflow-wrap:anywhere">{_detail[:90]}</div>'
+                + (f'<div style="font-size:6.5pt;color:#555;margin-top:0.2mm;line-height:1.3;overflow-wrap:anywhere">{_detail}</div>'
                    if _detail else '')
                 + '</div>'
             )
@@ -1702,6 +1731,14 @@ hr.dv { border:none; border-top:0.4pt solid #d5d8dc; margin:0.6mm 0; }
                         f'background:{_lbg};padding:0.3mm 2mm;margin-top:0.5mm;'
                         f'border-radius:1mm">{_esc(_xlate_preg_note(_line))}</div>'
                     )
+            # Other findings about the same drug (dose adjustment, etc.)
+            for _also in _pw.get("also", []):
+                _a_txt = _also.get("text_en") if _EN else _also.get("text_ar")
+                if _a_txt:
+                    H.append(
+                        '<div style="font-size:9pt;color:#b7770d;background:#fef9e7;'
+                        'padding:0.3mm 2mm;margin-top:0.5mm;border-radius:1mm">'
+                        f'+ {_esc(_a_txt)}</div>')
             H.append('</div>')
 
     # Combination + Hepatic (compact)
@@ -2342,6 +2379,9 @@ def generate_report(
     # لازم لترتيب المضادات بنفس منطق الشاشة/الصورة/الـ PDF. اختياري بقيمة None
     # عشان أي نداء قديم للدالة ما يتكسرش.
     phenotypes:            List[Dict] = None,
+    # Decides whether "I" counts as non-susceptible in the MDR classification
+    # printed below. Defaulted so existing callers keep working.
+    interp_std:            str = "CLSI",
 ) -> str:
     now  = datetime.now().strftime("%Y-%m-%d %H:%M")
     sep  = "=" * 60
@@ -2406,7 +2446,7 @@ def generate_report(
 
     # MDR/XDR/PDR + ESBL في التقرير
     if sir_map:
-        mdr_r = classify_mdr(organism, sir_map)
+        mdr_r = classify_mdr(organism, sir_map, interp_std)
         if mdr_r["level"]:
             info = MDR_INFO[mdr_r["level"]]
             L += [f"\n{info['icon']} RESISTANCE CLASSIFICATION: {info['label']}", sep2,
@@ -2486,9 +2526,16 @@ def generate_report(
                 if _note:
                     for _ln in textwrap.wrap(str(_note), 66):
                         L.append(f"          : {_ln}")
-            else:
+            elif item.get("warning_reason") == "renal_adjustment":
                 L += [f"Renal note: {item.get('renal_note','-')}",
                       f"Limit CrCl: <= {item.get('renal_limit','-')} ml/min"]
+            else:
+                for _ln in textwrap.wrap(str(item.get("warning_text_en")
+                                             or item.get("warning_text") or "-"), 66):
+                    L.append(f"Caution   : {_ln}")
+            for _also in item.get("also", []):
+                for _ln in textwrap.wrap(str(_also.get("text_en") or _also.get("text_ar") or ""), 66):
+                    L.append(f"Also      : {_ln}")
             if show_commercial_names:
                 _brands = get_commercial_name(item["name"])
                 if _brands:
@@ -2500,6 +2547,8 @@ def generate_report(
         for item in preg_warn_items:
             L += [item['name'], sep2]
             L.extend((item.get("preg_note") or "").splitlines())
+            for _also in item.get("also", []):
+                L.append(f"Also: {_also.get('text_en') or _also.get('text_ar') or ''}")
             L.append("")
 
     if banned:

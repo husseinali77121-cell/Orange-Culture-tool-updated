@@ -554,8 +554,20 @@ TREATMENT_DURATION_DB: Dict[str, Any] = {
     "Bacteremia_GNB": {
         "label": "GNB Bacteremia",
         "days": (7, 14), "standard": 14, "iv_days": 14, "po_days": 0,
-        "notes": "14d IV. Source control mandatory. Echo if Staph aureus.",
-        "follow_up_culture": True, "ref": "IDSA 2025",
+        "notes": "7d is adequate for uncomplicated GNB bacteremia with source control and "
+                 "prompt clinical response; up to 14d otherwise. Source control mandatory.",
+        "follow_up_culture": True, "ref": "IDSA AMR Guidance 2024 | Yahav et al. CID 2019",
+    },
+    # Non-S. aureus Gram-positive (Enterococcus, streptococci, CoNS) and
+    # anything that is not a Gram-negative bacillus. These used to be routed to
+    # the "GNB Bacteremia" row and printed under that label.
+    "Bacteremia_other": {
+        "label": "Bacteremia (non-S. aureus Gram-positive / other)",
+        "days": (7, 14), "standard": 14, "iv_days": 14, "po_days": 0,
+        "notes": "Exclude endocarditis (echo) for Enterococcus / viridans streptococci — "
+                 "endocarditis needs 4-6 weeks. Remove infected lines. Candida: 14d after "
+                 "first negative blood culture.",
+        "follow_up_culture": True, "ref": "IDSA (CRBSI 2009; Endocarditis AHA/IDSA 2015)",
     },
     "Bacteremia_MSSA": {
         "label": "MSSA Bacteremia",
@@ -574,6 +586,41 @@ TREATMENT_DURATION_DB: Dict[str, Any] = {
         "days": (10, 14), "standard": 14, "iv_days": 14, "po_days": 0,
         "notes": "Dexamethasone 0.15mg/kg q6h x4d adjunct. IV throughout.",
         "follow_up_culture": True, "ref": "IDSA Meningitis Guidelines",
+    },
+    # Organism-specific durations: IDSA Practice Guidelines for the Management
+    # of Bacterial Meningitis (Tunkel et al., CID 2004), Table "Duration of
+    # antimicrobial therapy". Every non-pneumococcal isolate used to receive
+    # the 21-day Gram-negative row - three times the meningococcal course.
+    "Meningitis_meningococcal": {
+        "label": "Meningococcal Meningitis (N. meningitidis)",
+        "days": (7, 7), "standard": 7, "iv_days": 7, "po_days": 0,
+        "notes": "7d IV. Droplet isolation for the first 24h; chemoprophylaxis for close contacts.",
+        "follow_up_culture": False, "ref": "IDSA Bacterial Meningitis Guidelines 2004",
+    },
+    "Meningitis_hinfluenzae": {
+        "label": "H. influenzae Meningitis",
+        "days": (7, 7), "standard": 7, "iv_days": 7, "po_days": 0,
+        "notes": "7d IV. Dexamethasone adjunct in children.",
+        "follow_up_culture": False, "ref": "IDSA Bacterial Meningitis Guidelines 2004",
+    },
+    "Meningitis_GBS": {
+        "label": "Group B Streptococcal Meningitis (S. agalactiae)",
+        "days": (14, 21), "standard": 14, "iv_days": 14, "po_days": 0,
+        "notes": "14-21d IV.",
+        "follow_up_culture": True, "ref": "IDSA Bacterial Meningitis Guidelines 2004",
+    },
+    "Meningitis_listeria": {
+        "label": "Listeria Meningitis",
+        "days": (21, 28), "standard": 21, "iv_days": 21, "po_days": 0,
+        "notes": "21 days OR LONGER, IV throughout. Cephalosporins are inactive against Listeria.",
+        "follow_up_culture": True, "ref": "IDSA Bacterial Meningitis Guidelines 2004",
+    },
+    "Meningitis_other": {
+        "label": "Bacterial Meningitis (other organism)",
+        "days": (10, 21), "standard": 14, "iv_days": 14, "po_days": 0,
+        "notes": "No organism-specific duration applies — individualise with infectious-"
+                 "diseases advice (device-associated / staphylococcal infection differs).",
+        "follow_up_culture": True, "ref": "IDSA Bacterial Meningitis 2004 | Healthcare-associated ventriculitis 2017",
     },
     "Meningitis_GNB": {
         "label": "Gram-Negative Meningitis",
@@ -809,6 +856,10 @@ PHENOTYPE_RULES = {
     "MRSA": {
         "organisms": ["Staphylococcus aureus","MRSA"],
         "markers":   [("Oxacillin","R"), ("Cefoxitin","R")],
+        # EITHER marker is sufficient. Cefoxitin is the EUCAST/CLSI screening
+        # agent and most panels carry only one of the two; without this line
+        # the rule demanded BOTH, so a cefoxitin-R S. aureus was not MRSA.
+        "require_any": 1,
         "fallback":  [("Vancomycin","S"), ("Linezolid","S")],  # حساس لهم → likely MRSA
         "icon":  "🔴",
         "label": "MRSA — Methicillin-Resistant S. aureus",
@@ -850,13 +901,16 @@ PHENOTYPE_RULES = {
     },
     "CRPA": {
         "organisms": ["Pseudomonas aeruginosa"],
-        "markers":   [("Imipenem/Cilastatin","R"),("Meropenem","R"),
-                      ("Piperacillin + Tazobactam","R"),("Ceftazidime","R")],
-        "require_any": 2,
+        # Carbapenem resistance is what the name says. This rule used to
+        # accept any 2 of 4 markers including Pip-Tazo and Ceftazidime, so an
+        # isolate with both carbapenems SUSCEPTIBLE was labelled CRPA while one
+        # with Meropenem R alone was not.
+        "markers":   [("Imipenem/Cilastatin","R"),("Meropenem","R")],
+        "require_any": 1,
         "icon":  "🔴",
         "label": "CRPA — Carbapenem-Resistant Pseudomonas aeruginosa",
-        "detail": "مقاوم للكاربابينيم مع مقاومة متعددة. خيارات علاجية محدودة.",
-        "action": "Colistin أو Ceftolozane-Tazobactam. Combination therapy مطلوبة.",
+        "detail": "مقاوم للكاربابينيم. راجع البيتا-لاكتام الأخرى في اللوحة — ما كان منها حسّاساً يُبلَّغ كما هو.",
+        "action": "لو Ceftazidime/Cefepime/Pip-Tazo حسّاس استخدمه بجرعة عالية وتسريب مُطوّل (IDSA AMR 2024). لو الكل مقاوم (DTR): Ceftolozane-Tazobactam / Ceftazidime-Avibactam، و Colistin كخيار أخير.",
         "isolation": True,
     },
 }

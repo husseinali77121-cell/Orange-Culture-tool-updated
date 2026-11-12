@@ -378,7 +378,8 @@ def _memoize(name: str, input_repr: str, compute_fn):
     return _v
 
 
-def _resistance_bundle(organism: str, sir: Dict[str, str]) -> Dict[str, Any]:
+def _resistance_bundle(organism: str, sir: Dict[str, str],
+                       interp_std: str = "CLSI") -> Dict[str, Any]:
     """The five pure resistance analyses, computed as one unit.
 
     classify_mdr, predict_esbl, detect_resistance_phenotypes, run_ast_qc and
@@ -390,7 +391,9 @@ def _resistance_bundle(organism: str, sir: Dict[str, str]) -> Dict[str, Any]:
     """
     qc = run_ast_qc(organism, sir) if sir else []
     return {
-        "mdr":   classify_mdr(organism, sir),
+        # The standard decides whether "I" counts as non-susceptible for the
+        # MDR/XDR/PDR definitions (CLSI: yes; EUCAST 2019+: no).
+        "mdr":   classify_mdr(organism, sir, interp_std),
         "esbl":  predict_esbl(organism, sir),
         "pheno": detect_resistance_phenotypes(organism, sir),
         "qc":    qc,
@@ -2263,8 +2266,8 @@ if uploaded:
         # organism or an S/I/R value actually changes.
         _rb = _memoize(
             "resistance_bundle",
-            repr((organism_type, sorted((sir_map or {}).items()))),
-            lambda: _resistance_bundle(organism_type, sir_map or {}),
+            repr((organism_type, sorted((sir_map or {}).items()), INTERP_STD)),
+            lambda: _resistance_bundle(organism_type, sir_map or {}, INTERP_STD),
         )
         mdr_result    = _rb["mdr"]
         esbl_result   = _rb["esbl"]
@@ -2629,6 +2632,10 @@ if uploaded:
                 with st.expander(f"⚠️ {item['name']} — تفاصيل التحذير"):
                     for line in (item.get("preg_note") or "").splitlines():
                         st.write(line)
+                    # Other findings about the same drug (dose adjustment,
+                    # intermediate result, mechanism caution ...).
+                    for _also in item.get("also", []):
+                        st.warning(f"➕ {_also.get('text_ar','')}")
 
         if banned:
             with st.expander("🚫 Contraindicated / Ineffective", expanded=True):
@@ -2742,8 +2749,16 @@ if uploaded:
                         st.warning(
                             f"**{item['name']}{sir_tag}** — {item.get('esbl_note','')}"
                         )
-                    else:
+                    elif item.get("warning_reason") == "renal_adjustment":
                         st.warning(f"**{item['name']}{sir_tag}** — {item.get('renal_note','')}")
+                    else:
+                        # Every warning row carries its own text (warning_text).
+                        # This branch used to print the drug's RENAL note for any
+                        # reason it did not recognise - e.g. the fosA caution.
+                        st.warning(f"**{item['name']}{sir_tag}** — "
+                                   f"{item.get('warning_text') or item.get('renal_note','')}")
+                    for _also in item.get("also", []):
+                        st.caption(f"　　➕ {_also.get('text_ar','')}")
 
         if allowed:
             st.success(f"🟢 {len(allowed)} Recommended Option(s)")
@@ -2819,6 +2834,12 @@ if uploaded:
                 if cat in ("child","pediatric"):             return "(Pediatric)"
                 if cat == "renal":                           return "(Renal)"
                 if cat == "organism":
+                    _rule = bd.get("rule", "")
+                    if _rule == "mrsa_beta_lactam":          return "(MRSA)"
+                    if _rule == "carbapenemase_carbapenem":  return "(Carbapenemase)"
+                    if _rule == "mechanism_beta_lactam":
+                        return "(Carbapenemase)" if _img_carbapenemase else "(ESBL)"
+                    if _rule:                                return "(Intrinsic R)"
                     _bl = any(k in _cl for k in ("penicillin","cephalosporin","carbapenem"))
                     if _img_mrsa and _bl:          return "(MRSA)"
                     if _img_carbapenemase and _bl: return "(Carbapenemase)"
@@ -3137,6 +3158,7 @@ if uploaded:
                     lab_city=_city,
                     patho_assessment=st.session_state.get("patho_result"),
                     show_commercial_names=show_commercial,
+                    interp_std=INTERP_STD,
                     phenotypes=phenotypes,
                 )
                 st.session_state._rpt_text = _new_report

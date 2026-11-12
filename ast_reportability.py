@@ -61,13 +61,38 @@ def _org_matches(organism: str, names: List[str]) -> bool:
     return any(n in o for n in names)
 
 
+_WORDS = re.compile(r"[a-z0-9]+")
+
+
+def _words(s: str) -> List[str]:
+    return _WORDS.findall((s or "").lower())
+
+
 def _drug_matches(drug: str, needles: List[str], excludes: List[str]) -> bool:
+    """Does `drug` name one of `needles`?
+
+    A needle matches on WHOLE WORDS of the drug name ("imipenem" matches
+    "Imipenem/Cilastatin", "cefuroxime" matches "Cefuroxime sodium"). It used
+    to match as a raw substring, and "ofloxacin" is a substring of
+    "levofloxacin": Levofloxacin - one of the few agents that DO work against
+    S. maltophilia - was reported as an intrinsic-resistance error for it.
+    `excludes` stay substring tests on purpose ("clav" must catch
+    "clavulanic", "clavulanate").
+    """
     d = _nk(drug)
     if not d:
         return False
     if any(_nk(x) in d for x in excludes):
         return False
-    return any(_nk(n) in d for n in needles)
+    dw = _words(drug)
+    for needle in needles:
+        nw = _words(needle)
+        if not nw:
+            continue
+        for i in range(len(dw) - len(nw) + 1):
+            if dw[i:i + len(nw)] == nw:
+                return True
+    return False
 
 
 # ── 1. INTRINSIC RESISTANCE ──────────────────────────────────────────────────
@@ -275,7 +300,7 @@ INTRINSIC_RULES: List[Dict[str, Any]] = [
         "reason_en": ("Acinetobacter is intrinsically resistant — "
                       "amoxicillin-clavulanate included (clavulanate adds nothing "
                       "here). (Note: ampicillin-sulbactam is an exception — "
-                      "sulbactam itself has intrinsic activity against ",
+                      "sulbactam itself has intrinsic activity against "
                       "Acinetobacter.)"),
         "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 3",
     },
@@ -314,10 +339,24 @@ INTRINSIC_RULES: List[Dict[str, Any]] = [
         "organisms": ["staphylococcus", "staph", "streptococc", "pneumoniae",
                       "enterococc", "vre", "listeria", "corynebacterium"],
         "drugs": ["aztreonam", "colistin", "polymyxin", "nalidixic acid",
-                  "temocillin", "fusidic acid"],
+                  "temocillin"],
         "exclude": [],
         "reason_ar": "إيجابيات الجرام مقاومة جوهرياً لمضادات سالبة الجرام هذه (aztreonam · colistin/polymyxin · nalidixic acid · temocillin).",
         "reason_en": "Gram-positive bacteria are expected resistant to these Gram-negative agents (aztreonam, colistin/polymyxin, nalidixic acid, temocillin).",
+        "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 4",
+    },
+    {
+        # Fusidic acid used to sit in the rule above, which applies to ALL
+        # Gram-positives - including staphylococci, the organisms fusidic acid
+        # exists to treat. "Fusidic acid S" on S. aureus was reported as an
+        # intrinsic-resistance ERROR. The expected resistance is in
+        # streptococci and enterococci (matching clinical_data.INTRINSIC_RESISTANCE).
+        "id": "intr_strep_entero_fusidic_acid",
+        "organisms": ["streptococc", "pneumoniae", "enterococc", "vre", "listeria"],
+        "drugs": ["fusidic acid"],
+        "exclude": [],
+        "reason_ar": "المكوّرات السبحية والمعوية مقاومة جوهرياً لـ Fusidic acid (نشاطه العلاجي مقصور على المكوّرات العنقودية).",
+        "reason_en": "Streptococci and enterococci are expected resistant to fusidic acid (its useful activity is confined to staphylococci).",
         "reference": "EUCAST Expected Resistant Phenotypes v1.2 (2023), Table 4",
     },
     {
@@ -396,7 +435,7 @@ INTRINSIC_RULES: List[Dict[str, Any]] = [
                       "Streptomycin 300µg) بدلاً منها."),
         "reason_en": ("Streptococci and enterococci are intrinsically resistant to "
                       "aminoglycoside MONOTHERAPY (poor cell-wall uptake). These "
-                      "agents are used only in synergy with a cell-wall-active drug ",
+                      "agents are used only in synergy with a cell-wall-active drug "
                       "(penicillin/ampicillin/vancomycin) and only when HLAR "
                       "screening is negative. A standalone S is uninterpretable and "
                       "must not be reported — report the HLAR screen "

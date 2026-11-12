@@ -133,6 +133,14 @@ SOURCES: Dict[str, Dict[str, Any]] = {
         "url": "https://www.idsociety.org/practice-guideline/amr-guidance/",
         "note": "ESBL-E, AmpC-E, CRE, DTR-P. aeruginosa, CRAB, S. maltophilia.",
     },
+    "IDSA_MENINGITIS": {
+        "title": "IDSA Practice Guidelines for the Management of Bacterial "
+                 "Meningitis (Tunkel et al., Clin Infect Dis 39:1267)",
+        "version": "2004",
+        "published": "2004-11",
+        "url": "https://doi.org/10.1086/425368",
+        "note": "Duration of antimicrobial therapy by isolated pathogen.",
+    },
     "MAGIORAKOS": {
         "title": "Magiorakos et al. — Multidrug-resistant, extensively drug-resistant "
                  "and pandrug-resistant bacteria: an international expert proposal "
@@ -256,6 +264,17 @@ RULES: Dict[str, Dict[str, Any]] = {
                 "scenario matrix (INV-9) showed S. pneumoniae, streptococci, "
                 "enterococci and Listeria all escaping a rule the EUCAST table "
                 "states for the whole Gram-positive group.",
+    },
+    "intr_strep_entero_fusidic_acid": {
+        "assertion": "Streptococci and enterococci are expected resistant to "
+                     "fusidic acid. Staphylococci are NOT - fusidic acid is an "
+                     "anti-staphylococcal agent.",
+        "source": "EUCAST_EXPECTED_R", "locus": "Table 4 (Gram-positive), fusidic acid column",
+        "verified": "pending",
+        "note": "Split out of intr_gram_pos_gram_neg_agents in v2.0: that rule "
+                "applies to every Gram-positive and had fusidic acid on its drug "
+                "list, so 'Fusidic acid S' on S. aureus was raised as an intrinsic-"
+                "resistance error. Listeria kept as before - confirm against the PDF.",
     },
     "intr_salmonella_shigella_invivo": {
         "assertion": "Salmonella and Shigella test susceptible in vitro to oral "
@@ -426,9 +445,69 @@ RULES: Dict[str, Dict[str, Any]] = {
     # ── Therapy notes ───────────────────────────────────────────────────────
     "tx_cefepime_esbl_uti": {
         "assertion": "Cefepime testing S with a predicted ESBL goes to Use With "
-                     "Caution (not banned) for uncomplicated lower UTI; it is banned "
-                     "when a carbapenemase is predicted or when cefepime is R.",
+                     "Caution for a URINE isolate (uncomplicated cystitis only) and "
+                     "to Avoid for any other specimen; it is banned when a "
+                     "carbapenemase is predicted or when cefepime is R.",
         "source": "IDSA_AMR", "locus": "ESBL-E section",
+        "verified": "pending",
+    },
+    # ── Rows added with the v2.0 rule engine (cdss/disposition) ─────────────
+    # All "pending": written from published summaries, not yet countersigned
+    # by a clinician against the source document.
+    "tx_esbl_betalactam_policy": {
+        "assertion": "Predicted ESBL: carbapenems are preferred outside the urinary "
+                     "tract. Every other beta-lactam that tests S (cephalosporins "
+                     "incl. cefepime, cephamycins, penicillins, inhibitor "
+                     "combinations incl. piperacillin-tazobactam and amoxicillin-"
+                     "clavulanate, aztreonam) is reported as tested but listed under "
+                     "AVOID for non-urine specimens and under caution (cystitis "
+                     "only) for urine.",
+        "source": "IDSA_AMR", "locus": "ESBL-E section (Q1-Q4)",
+        "verified": "pending",
+        "note": "cdss/disposition/rules_mechanism.py. Replaces three inconsistent "
+                "branches; amoxicillin-clavulanate and aztreonam used to stay "
+                "'recommended' for ESBL bacteremia.",
+    },
+    "tx_ampc_cefepime": {
+        "assertion": "Enterobacterales with derepressed AmpC: cefepime (when S) is "
+                     "the suggested agent; carbapenem if cefepime is not S. E. "
+                     "cloacae complex, K. aerogenes and C. freundii that still test "
+                     "S to a 3rd-generation cephalosporin can develop resistance on "
+                     "therapy - acceptable for uncomplicated cystitis only.",
+        "source": "IDSA_AMR", "locus": "AmpC-E section",
+        "verified": "pending",
+        "note": "Cefepime used to be downgraded to 'ESBL - UTI only' here, "
+                "contradicting the engine's own AmpC action text.",
+    },
+    "tx_cre_ertapenem_only": {
+        "assertion": "Enterobacterales not susceptible to ertapenem but susceptible "
+                     "to meropenem, with no carbapenemase identified, can be treated "
+                     "with extended-infusion meropenem. The pattern alone does not "
+                     "establish a carbapenemase, so a susceptible carbapenem is kept "
+                     "under caution (confirm mCIM/PCR) rather than removed.",
+        "source": "IDSA_AMR", "locus": "CRE section",
+        "verified": "pending",
+    },
+    "mech_morganellaceae_imipenem": {
+        "assertion": "Proteus, Morganella and Providencia have intrinsically reduced "
+                     "imipenem susceptibility: imipenem R/I alone is neither a "
+                     "carbapenemase signal nor CRE in these genera.",
+        "source": "EUCAST_BP", "locus": "Enterobacterales, imipenem note (Morganellaceae)",
+        "verified": "pending",
+    },
+    "class_mdr_eucast_i": {
+        "assertion": "Under EUCAST (2019+) 'I' is 'susceptible, increased exposure' "
+                     "and is counted as susceptible when applying the MDR/XDR/PDR "
+                     "definitions; under CLSI 'I' counts as non-susceptible, as in "
+                     "the original Magiorakos paper.",
+        "source": "EUCAST_BP", "locus": "Definitions of S, I and R (2019)",
+        "verified": "pending",
+    },
+    "tx_meningitis_duration": {
+        "assertion": "Duration by pathogen: N. meningitidis 7 d; H. influenzae 7 d; "
+                     "S. pneumoniae 10-14 d; S. agalactiae 14-21 d; aerobic Gram-"
+                     "negative bacilli 21 d; L. monocytogenes >= 21 d.",
+        "source": "IDSA_MENINGITIS", "locus": "Table: duration of antimicrobial therapy",
         "verified": "pending",
     },
     "tx_stenotrophomonas_sxt": {

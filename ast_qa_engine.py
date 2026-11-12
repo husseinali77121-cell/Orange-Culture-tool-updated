@@ -117,12 +117,17 @@ _INTRINSIC_RESISTANCE: Dict[str, List[str]] = {
 
 def _check_intrinsic_resistance(organism: str, sir: Dict[str, str]) -> List[QAIssue]:
     issues = []
-    # substring match (binomial ↔ abbreviated), identical to the clinical engine
-    _org_l = (organism or "").lower().strip()
-    resistant_drugs = set()
-    for _k, _lst in _INTRINSIC_RESISTANCE.items():
-        if _k and (_k in _org_l or _org_l in _k):
-            resistant_drugs.update(_lst)
+    # Same organism resolver as the clinical engine (cdss.organisms), so the
+    # two can never disagree about what is intrinsic. The previous substring
+    # test (`key in name or name in key`) matched EVERY row when no organism
+    # was selected, and no row at all for names the table spells differently.
+    from cdss.organisms import identify, intrinsic_drugs
+    _org = identify(organism)
+    resistant_drugs = set(intrinsic_drugs(organism))
+    if _org.is_("name_mrsa"):
+        resistant_drugs.update(_QA_ONLY_INTRINSIC["mrsa"])
+    if _org.genus == "mycoplasma":
+        resistant_drugs.update(_QA_ONLY_INTRINSIC["mycoplasma spp."])
     for drug in sorted(resistant_drugs):
         if _is_S(drug, sir) or _is_I(drug, sir):
             val = sir[drug]
